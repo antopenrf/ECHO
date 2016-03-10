@@ -31,7 +31,6 @@ times = 20
 a = rc.bounce(times)
 for each in range(times):
     next(a)
-    print(rc.p, rc.theta)
     particle.goto(scale*rc.p[0], scale*rc.p[1])
 
 raw_input()

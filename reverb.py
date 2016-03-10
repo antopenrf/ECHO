@@ -179,6 +179,8 @@ class Reverb(object):
               
     def _hit_and_reflect(self):
         hit = self._hitwhere()
+        print('before hit', self.p, self.theta)
+        print(hit)
         if hit == 'ceiling':
             self._reflection_on_ceiling()
         if hit == 'floor':
@@ -186,8 +188,9 @@ class Reverb(object):
         if hit == 'left circle':
             self._reflection_on_left_circle()
         if hit == 'right circle':
-            self._reflection_on_right_circle()
-        
+            self._reflection_on_right_circle() 
+        print('after hit', self.p, self.theta)    
+        print('\n')
         
     def bounce(self, times):
         """Bounce inside the chamebr by times (number of times)."""
