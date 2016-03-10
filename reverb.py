@@ -4,6 +4,8 @@ cos = math.cos
 tan = math.tan
 atan = math.atan
 
+from sys import exit
+
 class Reverb(object):
     
     def __init__(self, p0, theta0, dim):
@@ -19,13 +21,50 @@ class Reverb(object):
 
     def _ang_p12(self, p1, p2):
         vec = (p2[0] - p1[0], p2[1] - p1[1])
-        theta = math.atan(vec[0]/vec[1])*180/math.pi
-        if vec[1] < 0:
-            if theta > 0:
-                return -180.0 + theta
-            else:
-                return  180.0 + theta
+        if vec[1] == 0 and vec[0] < 0:
+            theta = -90.0
+        elif vec[1] == 0 and vec[0] > 0:
+            theta = 90.0
+        else:
+            theta = math.atan(vec[0]/vec[1])*180/math.pi
+            if vec[1] < 0:
+                if theta > 0:
+                    theta = -180.0 + theta
+                else:
+                    theta =  180.0 + theta
         return theta
+
+    def _solve_quadratic(self, b, c):
+        delta = b*b - 4*c
+        if delta < 0:
+            print("No solutions!")
+            exit()
+        root1 = (-b + delta**0.5)/2
+        root2 = (-b - delta**0.5)/2
+        return root1, root2
+
+    def _solve_parametric(self, px, py, radius, theta, mode = 'left'):
+        b = 2*(px*cos(theta) + py*sin(theta))
+        c = px**2 + py**2 - radius**2
+        t1, t2 = self._solve_quadratic(b, c)
+        x1 = px + t1*cos(theta)
+        x2 = px + t2*cos(theta)
+        if mode == 'left':
+            if x1 > x2:
+                px = x2
+                py = py + t2*sin(theta)
+            else:
+                px = x1
+                py = py + t1*sin(theta)
+        elif mode == 'right':
+            if x1 > x2:
+                px = x1
+                py = py + t1*sin(theta)
+            else:
+                px = x2
+                py = py + t2*sin(theta)
+        return px, py
+    
         
     def _ang_pA(self):
         return self._ang_p12(self.p, self.A)
@@ -50,32 +89,33 @@ class Reverb(object):
         PC = self._ang_pC()
         PD = self._ang_pD()
         if px <= -bw/2:
-            if theta >= PA and theta < PB:
+            if theta >= PA and theta <= PB:
                 return 'ceiling'
-            if theta >= PB and theta < PC:
+            if theta >  PB and theta <  PC:
                 return 'right circle'
-            if theta >= PC and theta < PD:
+            if theta >= PC and theta <= PD:
                 return 'floor'
             else:
                 return 'left circle'
         if px >= bw/2:
-            if theta <= PB and theta > PA:
+            if theta <= PB and theta >= PA:
                 return 'ceiling'
-            if theta <= PA and theta > PD:
+            if theta <  PA and theta >  PD:
                 return 'left circle'
-            if theta <= PD and theta > PC:
+            if theta <= PD and theta >= PC:
                 return 'floor'
             else:
                 return 'right circle'
         if px > -bw/2 and px < bw/2:
-            if theta >= PD and theta < PA:
+            if theta >  PD and theta <  PA:
                 return 'left circle'
-            if theta >= PA and theta < PB:
+            if theta >= PA and theta <= PB:
                 return 'ceiling'
-            if theta >= PB and theta < PC:
+            if theta >  PB and theta <  PC:
                 return 'right circle'
             else:
                 return 'floor'
+
 
     def _reflection_on_box(self):
         if self.theta > 0:
@@ -88,7 +128,7 @@ class Reverb(object):
         py = self.p[1]
         theta = (-1*self.theta + 90.0)/180.0*math.pi
         radius = self.dim[1]
-        self.p = (px + (-radius - py)*cos(theta)/sin(theta), -radius)
+        self.p = (px + (-radius - py)/tan(theta), -radius)
         self._reflection_on_box()
 
     def _reflection_on_ceiling(self):
@@ -96,76 +136,85 @@ class Reverb(object):
         py = self.p[1]
         theta = (-1*self.theta + 90.0)/180.0*math.pi
         radius = self.dim[1]
-        self.p = (px + (radius - py)*cos(theta)/sin(theta), radius)
+        self.p = (px + (radius - py)/tan(theta), radius)
         self._reflection_on_box()
 
     def _reflection_on_left_circle(self):
         bw = self.dim[0]
+        radius = self.dim[1]
         px = self.p[0] + bw/2.0
         py = self.p[1]
         theta = (-1*self.theta + 90.0)/180.0*math.pi
-        t = -2*(px*cos(theta) + py*sin(theta))
-        p = (px + t*sin(theta), py + t*cos(theta))
-        phi = atan(p[0] / p[1])*180/math.pi
+        p = self._solve_parametric(px, py, radius, theta, mode = 'left')
+
+        if p[1] == 0:
+            phi = -90.0
+        else:
+            phi = atan(p[0] / p[1])*180/math.pi
+
         if phi > 0:
-            phi = 180.0 - phi
+            phi = -180.0 + phi
+
         self.theta = 180.0 - self.theta + 2*phi
         self.p = (p[0] - bw/2.0, p[1])
         
     def _reflection_on_right_circle(self):
         bw = self.dim[0]
+        radius = self.dim[1]
         px = self.p[0] - bw/2.0
         py = self.p[1]
         theta = (-1*self.theta + 90.0)/180.0*math.pi
-        t = -2*(px*cos(theta) + py*sin(theta))
-        p = (px + t*sin(theta), py + t*cos(theta))
-        phi = atan(p[0] / p[1])*180/math.pi
+        p = self._solve_parametric(px, py, radius, theta, mode = 'right')
+  
+        if p[1] == 0:
+            phi = 90.0
+        else:
+            phi = atan(p[0] / p[1])*180/math.pi
+            
         if phi < 0:
             phi = 180.0 + phi
+
         self.theta = -180.0 - self.theta + 2*phi
         self.p = (p[0] + bw/2.0, p[1])
+              
+    def _hit_and_reflect(self):
+        hit = self._hitwhere()
+        if hit == 'ceiling':
+            self._reflection_on_ceiling()
+        if hit == 'floor':
+            self._reflection_on_floor()
+        if hit == 'left circle':
+            self._reflection_on_left_circle()
+        if hit == 'right circle':
+            self._reflection_on_right_circle()
         
         
-    def walk(self, p, theta):
+    def bounce(self, times):
+        """Bounce inside the chamebr by times (number of times)."""
+        n = 0
+        while n < times:
+            self._hit_and_reflect()
+            yield self.p, self.theta
+            n += 1
+
+    def print_info(self):
+        print("Print position:")
+        print(self.p)
+        print("\n")
+        print("Print heading direction:")
+        print(self.theta)
+
+    def walkto(self, p, theta):
         self.p = p
         self.theta = theta
             
 
 if __name__ == '__main__':
-    rc = Reverb(p0 = (0, 0.5), theta0 = 11.0, dim =(2.0, 1.0))
-    print(rc._ang_pA())
-    print(rc._ang_pB())
-    print(rc._ang_pC())
-    print(rc._ang_pD())            
+    rc = Reverb(p0 = (0, 0), theta0 = 133.0, dim =(2.0, 1.0))
+    times = 10
+    a = rc.bounce(times)
+#    rc._reflection_on_left_circle()
+#    rc.print_info()
+    for each in range(times):
+        print(next(a))
 
-
-    rc.walk((0,0), 19)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_ceiling()
-    print(rc.p, rc.theta)
-
-    rc.walk((0,0), -45)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_ceiling()
-    print(rc.p, rc.theta)
-
-    rc.walk((0,0), 170)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_floor()
-    print(rc.p, rc.theta)
-
-    rc.walk((0,0), -170)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_floor()
-    print(rc.p, rc.theta)
-
-    rc.walk((0,0), -91)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_left_circle()
-    print(rc.p, rc.theta)
-
-    rc.walk((0,0), 91)
-    print(rc.p, rc.theta,rc._hitwhere())
-    rc._reflection_on_right_circle()
-    print(rc.p, rc.theta)
-    
