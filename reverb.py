@@ -44,12 +44,23 @@ class Reverb(object):
         return root1, root2
 
     def _solve_parametric(self, px, py, radius, theta, mode = 'left'):
+        """Internal function to solve parametrically the intersection of the bounced line with the circles.
+        There will be two roots, i.e. two intersections.  Code will pick the right one."""
         b = 2*(px*cos(theta) + py*sin(theta))
         c = px**2 + py**2 - radius**2
         t1, t2 = self._solve_quadratic(b, c)
         x1 = px + t1*cos(theta)
         x2 = px + t2*cos(theta)
-        if mode == 'left':
+        if abs(x1-px) < 0.001 or abs(x2-px) < 0.001:
+            ### when two intersections are on the same semicircle.
+            if abs(x1-px) < 0.01:
+                px = x2
+                py = py + t2*sin(theta)
+            else:
+                px = x1
+                py = py + t1*sin(theta)
+        elif mode == 'left':
+            ### when one intersection is on the left semicircle.
             if x1 > x2:
                 px = x2
                 py = py + t2*sin(theta)
@@ -57,6 +68,7 @@ class Reverb(object):
                 px = x1
                 py = py + t1*sin(theta)
         elif mode == 'right':
+            ### when one intersection is on the right semicircle.
             if x1 > x2:
                 px = x1
                 py = py + t1*sin(theta)
@@ -156,6 +168,10 @@ class Reverb(object):
             phi = -180.0 + phi
 
         self.theta = 180.0 - self.theta + 2*phi
+        if self.theta > 180:
+            self.theta = self.theta - 360
+        elif self.theta < -180:
+            self.theta = self.theta + 360
         self.p = (p[0] - bw/2.0, p[1])
         
     def _reflection_on_right_circle(self):
@@ -170,11 +186,15 @@ class Reverb(object):
             phi = 90.0
         else:
             phi = atan(p[0] / p[1])*180/math.pi
-            
+
         if phi < 0:
             phi = 180.0 + phi
 
         self.theta = -180.0 - self.theta + 2*phi
+        if self.theta > 180:
+            self.theta = self.theta - 360
+        elif self.theta < -180:
+            self.theta = self.theta + 360
         self.p = (p[0] + bw/2.0, p[1])
               
     def _hit_and_reflect(self):
@@ -213,11 +233,14 @@ class Reverb(object):
             
 
 if __name__ == '__main__':
-    rc = Reverb(p0 = (0, 0), theta0 = 133.0, dim =(2.0, 1.0))
-    times = 10
+
+
+    rc = Reverb(p0 = (0.49, -1), theta0 = 17.99, dim =(2.0, 1.0))
+    times = 3
     a = rc.bounce(times)
 #    rc._reflection_on_left_circle()
 #    rc.print_info()
     for each in range(times):
-        print(next(a))
+        next(a)
+#print(next(a))
 
