@@ -7,13 +7,33 @@ atan = math.atan
 from sys import exit
 
 class Reverb(object):
-    
-    def __init__(self, p0, theta0, dim):
+    """Reverberation simulation by particle bouncing.
+    Note: Object is instantiated as
+
+    r = Reverb(p0, theta0, dim, mode)
+    p0: initial position, a tuple of two as (x, y) coordinate
+    theta0: initial direction, given in float.
+    dim: a tuple of two floats.  dim[0] is box width; dim[1] is half of box height, or radius.
+    mode: 'chaos' - cavity with two semicircles to obtain chaotic traces.
+          'retangular' - regular box cavity.
+
+    Coordinate details:
+    1. The center of the cavitiy is the origin (0, 0).
+    2. Theta > 0 from y-axis clockwise; theta < 0 counterclockwise.
+    """
+
+    def __init__(self, p0, theta0, dim, mode = 'chaos'):
+        """Mode can be 'chaos' or 'retangular'.
+        dim[0] is the width of the box.
+        mode == 'chaos' ==> dim[1] is the radius of the two semicircles on the left and right.
+        mode == 'retangular' ==> dim[1] is half of the box height.
+        """
+        self.mode = mode
         self.p = p0         ## initial (x,y) coordinate in tuple
         self.theta = theta0 ## initial direction in deg
         self.dim = dim
         bw = dim[0]         ## box width
-        radius = dim[1]     ## circle radius
+        radius = dim[1]     ## circle radius or half height
         self.A = (bw/-2.0,  1.0*radius)
         self.B = (bw/ 2.0,  1.0*radius)
         self.C = (bw/ 2.0, -1.0*radius)
@@ -51,7 +71,7 @@ class Reverb(object):
         t1, t2 = self._solve_quadratic(b, c)
         x1 = px + t1*cos(theta)
         x2 = px + t2*cos(theta)
-        if abs(x1-px) < 0.001 or abs(x2-px) < 0.001:
+        if abs(x1-px) < 1e-5 or abs(x2-px) < 1e-5:
             ### when two intersections are on the same semicircle.
             if abs(x1-px) < 0.01:
                 px = x2
@@ -96,37 +116,78 @@ class Reverb(object):
         py = self.p[1]
         theta = self.theta
         bw = self.dim[0]
+        radius = self.dim[1]
         PA = self._ang_pA()
         PB = self._ang_pB()
         PC = self._ang_pC()
         PD = self._ang_pD()
-        if px <= -bw/2:
-            if theta >= PA and theta <= PB:
-                return 'ceiling'
-            if theta >  PB and theta <  PC:
-                return 'right circle'
-            if theta >= PC and theta <= PD:
-                return 'floor'
+        if self.mode == 'rectangular':
+            if abs(px - (-bw/2)) < 1e-5:
+                if theta <= PB:
+                    return 'ceiling'
+                if theta >  PB and theta <  PC:
+                    return 'right'
+                if theta >= PC:
+                    return 'floor'
+            elif abs(px - bw/2) < 1e-5:
+                if theta >= PA:
+                    return 'ceiling'
+                if theta <  PA and theta >  PD:
+                    return 'left'
+                if theta <= PD:
+                    return 'floor'
+            elif abs(py - radius) < 1e-5:
+                if theta < PC and theta > 0:
+                    return 'right'
+                elif theta > PD and theta < 0:
+                    return 'left'
+                else:
+                    return 'floor'
+            elif abs(py - (-radius)) < 1e-5:
+                if theta > PB and theta > 0:
+                    return 'right'
+                elif theta < PA and theta < 0:
+                    return 'left'
+                else:
+                    return 'ceiling'
             else:
-                return 'left circle'
-        if px >= bw/2:
-            if theta <= PB and theta >= PA:
-                return 'ceiling'
-            if theta <  PA and theta >  PD:
-                return 'left circle'
-            if theta <= PD and theta >= PC:
-                return 'floor'
-            else:
-                return 'right circle'
-        if px > -bw/2 and px < bw/2:
-            if theta >  PD and theta <  PA:
-                return 'left circle'
-            if theta >= PA and theta <= PB:
-                return 'ceiling'
-            if theta >  PB and theta <  PC:
-                return 'right circle'
-            else:
-                return 'floor'
+                if theta >= PA and theta <= PB:
+                    return 'ceiling'
+                if theta >  PB and theta <  PC:
+                    return 'right'
+                if theta <  PA and theta >  PD:
+                    return 'left'
+                else:
+                    return 'floor'
+                
+        elif self.mode == 'chaos':
+            if px >= -bw/2:
+                if theta >= PA and theta <= PB:
+                    return 'ceiling'
+                if theta >  PB and theta <  PC:
+                    return 'right'
+                if theta >= PC and theta <= PD:
+                    return 'floor'
+                else:
+                    return 'left'
+            if px >= bw/2:
+                if theta <= PB and theta >= PA:
+                    return 'ceiling'
+                if theta <  PA and theta >  PD:
+                    return 'left'
+                if theta <= PD and theta >= PC:
+                    return 'floor'
+                else:
+                    return 'right'
+            if px > -bw/2 and px < bw/2:
+                if theta >  PD and theta <  PA:
+                    return 'left'
+                if theta >= PA and theta <= PB:
+                    return 'ceiling'
+                if theta >  PB and theta <  PC:
+                    return 'right'
+                else:
+                    return 'floor'
 
 
     def _reflection_on_box(self):
@@ -150,6 +211,33 @@ class Reverb(object):
         radius = self.dim[1]
         self.p = (px + (radius - py)/tan(theta), radius)
         self._reflection_on_box()
+
+    def _reflection_on_right_wall(self):
+        bw = self.dim[0]
+        radius = self.dim[1]
+        ## initial px, py
+        theta = self.theta/180.0*math.pi
+        px = self.p[0]
+        py = self.p[1]
+        print(bw, radius, theta, px, py)
+        ## after bouncing at the wall
+        py = py + (bw/2 - px) / tan(theta)
+        px = bw / 2
+        self.p = (px, py)
+        self.theta = -self.theta
+            
+    def _reflection_on_left_wall(self):
+        bw = self.dim[0]
+        radius = self.dim[1]
+        ## initial px, py
+        theta = self.theta
+        px = self.p[0]
+        py = self.p[1]
+        ## after bouncing at the wall
+        py = py + (-bw/2 - px) / tan(theta/180.0*math.pi)
+        px = -bw / 2
+        self.p = (px, py)
+        self.theta = -self.theta
 
     def _reflection_on_left_circle(self):
         bw = self.dim[0]
@@ -205,10 +293,16 @@ class Reverb(object):
             self._reflection_on_ceiling()
         if hit == 'floor':
             self._reflection_on_floor()
-        if hit == 'left circle':
-            self._reflection_on_left_circle()
-        if hit == 'right circle':
-            self._reflection_on_right_circle() 
+        if hit == 'left':
+            if self.mode == 'chaos':
+                self._reflection_on_left_circle()
+            elif self.mode == 'rectangular':
+                self._reflection_on_left_wall()
+        if hit == 'right':
+            if self.mode == 'chaos':
+                self._reflection_on_right_circle()
+            elif self.mode == 'rectangular':
+                self._reflection_on_right_wall()
         print('after hit', self.p, self.theta)    
         print('\n')
         
@@ -234,13 +328,18 @@ class Reverb(object):
 
 if __name__ == '__main__':
 
+    def test_chaos():
+        rc = Reverb(p0 = (0.49, -1), theta0 = 17.99, dim =(2.0, 1.0))
+        times = 3
+        a = rc.bounce(times)
+        for each in range(times):
+            next(a)
 
-    rc = Reverb(p0 = (0.49, -1), theta0 = 17.99, dim =(2.0, 1.0))
-    times = 3
-    a = rc.bounce(times)
-#    rc._reflection_on_left_circle()
-#    rc.print_info()
-    for each in range(times):
-        next(a)
-#print(next(a))
-
+    def test_ret():
+        rc = Reverb(p0 = (0, 0), theta0 = 45, dim =(200, 200), mode = 'rectangular')
+        times = 5
+        a = rc.bounce(times)
+        for each in range(times):
+            next(a)
+        
+    test_ret()

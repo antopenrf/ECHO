@@ -2,7 +2,7 @@ from turtle import *
 from reverb import *
 
 
-bw = 200     ## in cm
+bw = 350     ## in cm
 radius = 100 ## in cm
 
 particle = Turtle()
@@ -12,13 +12,9 @@ particle.penup()
 particle.goto(-bw/2, -radius)
 particle.pendown()
 particle.goto(bw/2, -radius)
-particle.circle(radius, 180)
+particle.goto(bw/2, radius)
 particle.goto(-bw/2, radius)
-particle.penup()
 particle.goto(-bw/2, -radius)
-particle.pendown()
-particle.circle(-radius, 180)
-
 #particle.speed(2)
 
 particle.penup()
@@ -26,7 +22,7 @@ particle.goto(0, 0)
 particle.pendown()
 particle.color('blue', 'red')
 
-rc = Reverb(p0 = (0, 0), theta0 = 153, dim =(200, 100))
+rc = Reverb(p0 = (0, 0), theta0 = 153, dim =(bw, radius), mode = 'rectangular')
 times = 3000
 a = rc.bounce(times)
 for each in range(times):
