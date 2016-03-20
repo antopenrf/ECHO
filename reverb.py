@@ -28,6 +28,7 @@ class Reverb(object):
         mode == 'chaos' ==> dim[1] is the radius of the two semicircles on the left and right.
         mode == 'retangular' ==> dim[1] is half of the box height.
         """
+        self.no = 0
         self.mode = mode
         self.p = p0         ## initial (x,y) coordinate in tuple
         self.theta = theta0 ## initial direction in deg
@@ -161,7 +162,7 @@ class Reverb(object):
                     return 'floor'
                 
         elif self.mode == 'chaos':
-            if px >= -bw/2:
+            if px <= -bw/2:
                 if theta >= PA and theta <= PB:
                     return 'ceiling'
                 if theta >  PB and theta <  PC:
@@ -180,6 +181,7 @@ class Reverb(object):
                 else:
                     return 'right'
             if px > -bw/2 and px < bw/2:
+                print('here')
                 if theta >  PD and theta <  PA:
                     return 'left'
                 if theta >= PA and theta <= PB:
@@ -219,7 +221,6 @@ class Reverb(object):
         theta = self.theta/180.0*math.pi
         px = self.p[0]
         py = self.p[1]
-        print(bw, radius, theta, px, py)
         ## after bouncing at the wall
         py = py + (bw/2 - px) / tan(theta)
         px = bw / 2
@@ -287,8 +288,8 @@ class Reverb(object):
               
     def _hit_and_reflect(self):
         hit = self._hitwhere()
-        print('before hit', self.p, self.theta)
-        print(hit)
+        # print('===DEGUG: before hit', self.p, self.theta)
+        # print(hit)
         if hit == 'ceiling':
             self._reflection_on_ceiling()
         if hit == 'floor':
@@ -303,23 +304,32 @@ class Reverb(object):
                 self._reflection_on_right_circle()
             elif self.mode == 'rectangular':
                 self._reflection_on_right_wall()
-        print('after hit', self.p, self.theta)    
-        print('\n')
+        # print('===DEGUG: after hit', self.p, self.theta)    
+        # print('\n')
+
         
-    def bounce(self, times):
+    def bounce(self, times, display = True, log = True, filename = "outcome.txt"):
         """Bounce inside the chamebr by times (number of times)."""
-        n = 0
-        while n < times:
+        self.no = 0
+        if log:
+            f = open(filename, "w")
+        while self.no < times:
+            if display:
+                self.print_info()
+            if log:
+                f.write(str(self.p[0]) + "\t" + str(self.p[1]) + "\t" + str(self.theta) + "\n")
             self._hit_and_reflect()
             yield self.p, self.theta
-            n += 1
+            self.no += 1
+        if log:
+            f.close()
+        
 
     def print_info(self):
-        print("Print position:")
-        print(self.p)
         print("\n")
-        print("Print heading direction:")
-        print(self.theta)
+        print("== Bouncing no: {0}".format(self.no))
+        print("At position: {0}".format(self.p))
+        print("Heading direction: {0}".format(self.theta))
 
     def walkto(self, p, theta):
         self.p = p

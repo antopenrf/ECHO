@@ -2,8 +2,8 @@ from turtle import *
 from reverb import *
 
 
-bw = 350     ## in cm
-radius = 100 ## in cm
+bw = 600     ## in cm
+radius = 200 ## in cm
 
 particle = Turtle()
 particle.shape('circle')
@@ -22,8 +22,8 @@ particle.goto(0, 0)
 particle.pendown()
 particle.color('blue', 'red')
 
-rc = Reverb(p0 = (0, 0), theta0 = 153, dim =(bw, radius), mode = 'rectangular')
-times = 3000
+rc = Reverb(p0 = (0, 0), theta0 = 30, dim =(bw, radius), mode = 'rectangular')
+times = 200
 a = rc.bounce(times)
 for each in range(times):
     next(a)
