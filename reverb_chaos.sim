@@ -1,0 +1,8 @@
+type		chaos
+dim		600, 300
+p0		0, 0
+theta0		153
+times		100
+display		True
+log		True
+filename	default
