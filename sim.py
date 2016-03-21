@@ -1,3 +1,7 @@
+from reverb import Reverb
+
+import re
+from turtle import *
 
 class Sim(object):
 
@@ -9,7 +13,9 @@ class Sim(object):
         f.close()
 
         for each in alllines:
-            temp = each[:each.find('#')].split()  # Any comments or lines after '#' will be removed. 
+            temp = each[:each.find('#')].replace(",", " ").split()
+            # Any comments or lines after '#' will be removed. 
+
             if temp != []:
                 if len(temp) == 2:
                     para = temp[1]
@@ -25,6 +31,52 @@ class Sim(object):
         self.display = bool(self.parameters['display'])
         self.log = bool(self.parameters['log'])
         self.filename = self.parameters['filename']
+
+    def _draw_boundary(self):
+        bw = self.dim[0]
+        radius = self.dim[1]
+        particle = Turtle()
+        particle.color('blue', 'red')
+        particle.speed(10)
+        particle.penup()
+        if self.type == 'rectangular':
+            particle.goto(-bw/2, -radius)
+            particle.pendown()
+            particle.goto(bw/2, -radius)
+            particle.goto(bw/2, radius)
+            particle.goto(-bw/2, radius)
+            particle.goto(-bw/2, -radius)
+
+        elif self.type == 'chaos':
+            particle.goto(-bw/2, -radius)
+            particle.pendown()
+            particle.goto(bw/2, -radius)
+            particle.circle(radius, 180)
+            particle.goto(-bw/2, radius)
+            particle.penup()
+            particle.goto(-bw/2, -radius)
+            particle.pendown()
+            particle.circle(-radius, 180)
+
+        particle.penup()
+        particle.goto(self.p0[0], self.p0[1])
+        particle.shape('circle')       
+        particle.pendown()
+        self.particle = particle
+
+        
+    def run(self):
+        self._draw_boundary()
+        p0 = (self.p0[0], self.p0[1])
+        dim = (self.dim[0], self.dim[1])
+        rc = Reverb(p0, self.theta0, dim, self.type)
+        times = self.times
+        trace = rc.bounce(times)
+        for each in range(times):
+            next(trace)
+            self.particle.goto(rc.p[0], rc.p[1])
+
+        input()
         
 if __name__ == '__main__':
     reverb = Sim("reverb_chaos.sim")
@@ -36,4 +88,5 @@ if __name__ == '__main__':
     print(reverb.times)
     print(reverb.display)
     print(reverb.log)
-    print(reverb.filaname)
+    print(reverb.filename)
+    reverb.run()

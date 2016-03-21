@@ -5,4 +5,5 @@ theta0		153
 times		100
 display		True
 log		True
+draw		True
 filename	default
