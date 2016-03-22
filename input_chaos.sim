@@ -1,0 +1,9 @@
+type		chaos
+dim		500, 300
+p0		0, 0
+theta0		153
+times		1000
+display		True
+log		True
+draw		True
+filename	results_chaos

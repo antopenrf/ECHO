@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 from reverb import Reverb
 
 import re
@@ -38,6 +40,8 @@ class Sim(object):
         radius = self.dim[1]
         particle = Turtle()
         particle.color('blue', 'red')
+        setup(width = 1200, height = 800)
+        particle.width(2)
         particle.speed(10)
         particle.penup()
         if self.type == 'rectangular':
@@ -64,8 +68,8 @@ class Sim(object):
         particle.shape('circle')       
         particle.pendown()
         particle.color('green', 'red')
+        particle.width(1)
         self.particle = particle
-
         
     def run(self):
         p0 = (self.p0[0], self.p0[1])
@@ -89,6 +93,8 @@ class Sim(object):
             ts = getscreen()
             ts.getcanvas().postscript(file = epsfile)
 
+
+
 if __name__ == '__main__':
     import sys
     if len(sys.argv) == 2:
@@ -98,7 +104,7 @@ if __name__ == '__main__':
         reverb.run()
     elif len(sys.argv) == 1:
         print("\nNo input file given.  Running demo mode on chaotic reverberation.")
-        reverb = Sim("reverb_chaos.sim")
+        reverb = Sim("input_chaos.sim")
         reverb.run()
     else:
         print("\nInput syntax error!")
