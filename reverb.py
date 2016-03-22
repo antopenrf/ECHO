@@ -181,7 +181,6 @@ class Reverb(object):
                 else:
                     return 'right'
             if px > -bw/2 and px < bw/2:
-                print('here')
                 if theta >  PD and theta <  PA:
                     return 'left'
                 if theta >= PA and theta <= PB:
@@ -312,7 +311,9 @@ class Reverb(object):
         """Bounce inside the chamebr by times (number of times)."""
         self.no = 0
         if log:
-            f = open(filename, "w")
+            f = open(filename + ".txt", "w")
+            f.write("## type:" + self.mode + "\n")
+            f.write("## dim:" + str(self.dim[0]) + ", " + str(self.dim[1]) + "\n")
         while self.no < times:
             if display:
                 self.print_info()

@@ -30,6 +30,7 @@ class Sim(object):
         self.times = int(self.parameters['times'])
         self.display = bool(self.parameters['display'])
         self.log = bool(self.parameters['log'])
+        self.draw = bool(self.parameters['draw'])
         self.filename = self.parameters['filename']
 
     def _draw_boundary(self):
@@ -62,31 +63,46 @@ class Sim(object):
         particle.goto(self.p0[0], self.p0[1])
         particle.shape('circle')       
         particle.pendown()
+        particle.color('green', 'red')
         self.particle = particle
 
         
     def run(self):
-        self._draw_boundary()
         p0 = (self.p0[0], self.p0[1])
         dim = (self.dim[0], self.dim[1])
         rc = Reverb(p0, self.theta0, dim, self.type)
-        times = self.times
-        trace = rc.bounce(times)
-        for each in range(times):
-            next(trace)
-            self.particle.goto(rc.p[0], rc.p[1])
+        trace = rc.bounce(self.times, self.display, self.log, self.filename)
 
-        input()
+        if self.draw:
+            self._draw_boundary()
         
+        for each in range(self.times):
+            next(trace)
+            if self.draw:
+                self.particle.goto(rc.p[0], rc.p[1])
+        if self.draw:
+            try:
+                y = input("\nPress any key to exit!\n")
+            except:
+                pass
+            epsfile = self.filename + ".eps"
+            ts = getscreen()
+            ts.getcanvas().postscript(file = epsfile)
+
 if __name__ == '__main__':
-    reverb = Sim("reverb_chaos.sim")
-    print(reverb.parameters)
-    print(reverb.type)
-    print(reverb.dim)
-    print(reverb.p0)
-    print(reverb.theta0)
-    print(reverb.times)
-    print(reverb.display)
-    print(reverb.log)
-    print(reverb.filename)
-    reverb.run()
+    import sys
+    if len(sys.argv) == 2:
+        filename = sys.argv[1]
+        print("\nRunning simulation file: {0}".format(filename))
+        reverb = Sim(filename)
+        reverb.run()
+    elif len(sys.argv) == 1:
+        print("\nNo input file given.  Running demo mode on chaotic reverberation.")
+        reverb = Sim("reverb_chaos.sim")
+        reverb.run()
+    else:
+        print("\nInput syntax error!")
+        print("\nRunning simulation file:")
+        print("  >python sim.py filename.sim\n")
+        print("\nRunning demo mode:")
+        print("  >python sim.py ## no input file\n")
