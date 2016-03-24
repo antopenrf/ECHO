@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
+from platform import system as os_type
+import os
 
-class anaTracks(object):
+class anaTraces(object):
     
     def __init__(self, inputfile):
         lines = open(inputfile, 'r')
@@ -9,6 +11,7 @@ class anaTracks(object):
         self.noc = len(self.coordinates)  ## number of coordinates
         self.getSections()
         self.getHistogram()
+        self.plotHistogram(inputfile[:inputfile.find(".")] + '.png')
 
     def getSections(self):
         self.sections = []
@@ -25,11 +28,20 @@ class anaTracks(object):
         self.sections.sort()
         self.sections = [ int(each*1e5)/1e5 for each in self.sections]
 
-    def plotHistogram(self):
+    def plotHistogram(self, filename):
         n, bins, patches = plt.hist(self.sections, 50, normed=1, facecolor='green', alpha=0.75)
         plt.ylabel = 'Probability'
-        plt.show()
+#        plt.show()
+        plt.savefig(filename)
+        if os_type().lower() == "cygwin":
+            command = "cygstart"
+        elif os_type().lower() == "linux":
+            command = "eog"
+        else:
+            command = "open"
+        os.system(command + " " + filename + " &")
 
+        
     def getHistogram(self):
         self.histogram = {}
         previous = None
@@ -39,10 +51,22 @@ class anaTracks(object):
                 self.histogram[each] = 1
             else:
                 self.histogram[each] += 1
-
+                
 if __name__ == '__main__':
-    ana = anaTracks("results_rect.txt")
-    print(ana.sections)
-    print(ana.histogram)
-    ana.plotHistogram()
-            
+    ana = anaTraces("results_rect.txt")            
+    import sys
+    if len(sys.argv) == 2:
+        filename = sys.argv[1]
+        print("\nAnalyze the given data: {0}".format(filename))
+        ana = anaTraces(filename)                    
+
+    elif len(sys.argv) == 1:
+        print("\nNo input file given.  Analyze the given data")
+        ana = anaTraces("results_rect.txt")
+    else:
+        print("\nInput syntax error!")
+        print("\nRunning simulation file:")
+        print("  >python analysis.py filename.txt\n")
+        print("\nRunning demo mode:")
+        print("  >python sim.py ## no input file\n")
+

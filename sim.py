@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 from reverb import Reverb
-
 import re
 from turtle import *
 
@@ -103,7 +102,7 @@ if __name__ == '__main__':
         reverb = Sim(filename)
         reverb.run()
     elif len(sys.argv) == 1:
-        print("\nNo input file given.  Running demo mode on chaotic reverberation.")
+        print("\nNo input file given.  Running demo mode on chaotic reverberation.\n")
         reverb = Sim("input_chaos.sim")
         reverb.run()
     else:
