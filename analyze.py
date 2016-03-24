@@ -29,9 +29,13 @@ class anaTraces(object):
         self.sections = [ int(each*1e5)/1e5 for each in self.sections]
 
     def plotHistogram(self, filename):
-        n, bins, patches = plt.hist(self.sections, 50, normed=1, facecolor='green', alpha=0.75)
-        plt.ylabel = 'Probability'
-#        plt.show()
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        n, bins, patches = ax.hist(self.sections, 50, normed=1, facecolor='green', alpha=0.75)
+        ax.set_title = filename
+        ax.set_ylabel = 'Probability'
+        ax.set_xlabel = 'Intersection Length'
+        #plt.show()
         plt.savefig(filename)
         if os_type().lower() == "cygwin":
             command = "cygstart"
@@ -53,16 +57,15 @@ class anaTraces(object):
                 self.histogram[each] += 1
                 
 if __name__ == '__main__':
-    ana = anaTraces("results_rect.txt")            
     import sys
     if len(sys.argv) == 2:
         filename = sys.argv[1]
-        print("\nAnalyze the given data: {0}".format(filename))
+        print("\n> Analyze the given data: {0}\n".format(filename))
         ana = anaTraces(filename)                    
 
     elif len(sys.argv) == 1:
-        print("\nNo input file given.  Analyze the given data")
-        ana = anaTraces("results_rect.txt")
+        print("\n> No input file given.  Analyze the demo data.\n")
+        ana = anaTraces("results_demo_chaos.txt")
     else:
         print("\nInput syntax error!")
         print("\nRunning simulation file:")
