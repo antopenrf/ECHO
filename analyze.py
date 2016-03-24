@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 
 class anaTracks(object):
     
@@ -7,6 +8,7 @@ class anaTracks(object):
         self.coordinates = [ (float(each[0]), float(each[1])) for each in raw_data[2:] ]
         self.noc = len(self.coordinates)  ## number of coordinates
         self.getSections()
+        self.getHistogram()
 
     def getSections(self):
         self.sections = []
@@ -19,13 +21,28 @@ class anaTracks(object):
             y2 = coor2[1]
             section = ((x1 - x2)**2 + (y1 - y2)**2)**0.5
             ## round up
-
             self.sections.append(section)
         self.sections.sort()
         self.sections = [ int(each*1e5)/1e5 for each in self.sections]
 
+    def plotHistogram(self):
+        n, bins, patches = plt.hist(self.sections, 50, normed=1, facecolor='green', alpha=0.75)
+        plt.ylabel = 'Probability'
+        plt.show()
+
+    def getHistogram(self):
+        self.histogram = {}
+        previous = None
+        for each in self.sections:
+            if each != previous:
+                previous = each
+                self.histogram[each] = 1
+            else:
+                self.histogram[each] += 1
+
 if __name__ == '__main__':
-    ana = anaTracks("results_chaos.txt")
+    ana = anaTracks("results_rect.txt")
     print(ana.sections)
-            
+    print(ana.histogram)
+    ana.plotHistogram()
             
