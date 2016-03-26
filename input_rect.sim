@@ -1,8 +1,8 @@
 type		rectangular
-dim		770, 300
+dim		960, 300
 p0		0, 0
 theta0		153
-times		500
+times		3000
 display		True
 log		True
 draw		True

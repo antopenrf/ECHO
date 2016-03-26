@@ -28,10 +28,10 @@ class anaTraces(object):
         self.sections.sort()
         self.sections = [ int(each*1e5)/1e5 for each in self.sections]
 
-    def plotHistogram(self, filename):
+    def plotHistogram(self, filename, nofbins = 200):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        n, bins, patches = ax.hist(self.sections, 50, normed=1, facecolor='green', alpha=0.75)
+        n, bins, patches = ax.hist(self.sections, nofbins, normed=1, facecolor='green', alpha=0.75)
         ax.set_title = filename
         ax.set_ylabel = 'Probability'
         ax.set_xlabel = 'Intersection Length'
