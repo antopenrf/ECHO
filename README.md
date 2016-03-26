@@ -12,8 +12,11 @@ Reference: 'Chaotic Model of a New Reverberation Enclosure for EMC Compliance Te
 
 
 **Prerequisite:**
+
 1. Python 2.7.x or Python 3.x
+
 2. Turtle
+
 3. matplotlib 1.4.x
 
 
@@ -68,7 +71,7 @@ After starting the sim.py script, the real time particle bouncing should be disp
 
 Then use the analyze.py script to generate histogram.  The chaotic reverberation chamber does show a great variety on the bouncing intersections between two consecuetive nodes.
 ```
->python analyze.py (the text file of the simulation results)
+>python analyze.py "the text file of the simulation results"
 ```
 
 For example of the histogram for chaotic reveberation.
