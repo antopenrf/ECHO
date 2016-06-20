@@ -1,12 +1,12 @@
 ##*ECHO*##
 
-ECHO is the reverberation chamber simulation tool to implement simple ray bouncing algorighm.  Python 'Turtle' package is used to visualize the real-time bouncing traces.  The main purpose of this tool is to trace the chaotic behaviour of speical chamber shape.  The code is still under development but can simulate basic 2D retangular box and one 2D chaotic chamber already.  Here is a list of features to develop in the future.
+ECHO is the reverberation chamber simulation tool to implement simple ray bouncing algorithm.  Python 'Turtle' package is used to visualize the real-time bouncing traces.  The main purpose of this tool is to trace the chaotic behavior of special chamber shape.  The code is still under development but can simulate basic 2D rectangular box and one 2D chaotic chamber already.  Here is a list of features to develop in the future.
 
 1. Add function to calculate the mode density
 2. Extend to 3D
 3. Extend for simulating more chamber geometry
 
-Refer to the following publication for the 2D chaotic reveberation geometry used in this algorithm.
+Refer to the following publication for the 2D chaotic reverberation geometry used in this algorithm.
 
 Reference: 'Chaotic Model of a New Reverberation Enclosure for EMC Compliance Testing in the Time Domain', Nicola Pasquino, IMTC 2004, Instrumentation and Measurement Technology Conference, Como, Italy, May 2004.
 
@@ -39,7 +39,7 @@ Start the demo.
 Edit the two input files, input_chaos.sim or input_rect.sim.  Then, run simulation as
 
 ```
->python sim.py input_chaos.sim  ## for chaotic reverberation simluation
+>python sim.py input_chaos.sim  ## for chaotic reverberation simulation
 >python sim.py input_rect.sim   ## for conventional reverberation simulation
 ```
 
@@ -69,15 +69,15 @@ After starting the sim.py script, the real time particle bouncing should be disp
 ![demo: rectangular reverberation](/demo_rect.png)
 
 
-Then use the analyze.py script to generate histogram.  The chaotic reverberation chamber does show a great variety on the bouncing intersections between two consecuetive nodes.
+Then use the analyze.py script to generate histogram.  The chaotic reverberation chamber does show a great variety on the bouncing intersections between two consecutive nodes.
 ```
 >python analyze.py "the text file of the simulation results"
 ```
 
-For example of the histogram for chaotic reveberation.
+For example of the histogram for chaotic reverberation.
 
 ![demo: chaotic reverberation](/demo_chaos_hist.png)
 
-For example of the histogram for rectangular reveberation.
+For example of the histogram for rectangular reverberation.
 ![demo: rectangular reverberation](/demo_rect_hist.png)
 
