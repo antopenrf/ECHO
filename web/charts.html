@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECHO Charts</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="charts-layout">
+    <section class="panel charts-panel">
+      <h1>Trace Charts</h1>
+      <p class="lede">Histogram and spectrum derived from the current bounce trace.</p>
+      <pre id="chartSummary" class="summary"></pre>
+    </section>
+
+    <section class="charts-grid">
+      <article class="panel chart-card">
+        <h2>Histogram</h2>
+        <canvas id="histogramCanvas" width="900" height="520"></canvas>
+      </article>
+      <article class="panel chart-card">
+        <h2>Spectrum</h2>
+        <canvas id="spectrumCanvas" width="900" height="520"></canvas>
+      </article>
+    </section>
+  </main>
+  <script src="charts.js"></script>
+</body>
+</html>

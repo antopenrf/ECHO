@@ -1,330 +1,324 @@
+import json
 import math
-sin = math.sin
-cos = math.cos
-tan = math.tan
-atan = math.atan
 
-from sys import exit
+
+EPSILON = 1e-9
+ADVANCE_EPSILON = 1e-7
+
+
+def theta_to_vector(theta_deg):
+    radians = math.radians(theta_deg)
+    return (math.sin(radians), math.cos(radians))
+
+
+def vector_to_theta(vector):
+    return math.degrees(math.atan2(vector[0], vector[1]))
+
+
+def dot(a, b):
+    return a[0] * b[0] + a[1] * b[1]
+
+
+def cross(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def subtract(a, b):
+    return (a[0] - b[0], a[1] - b[1])
+
+
+def add(a, b):
+    return (a[0] + b[0], a[1] + b[1])
+
+
+def scale(vector, factor):
+    return (vector[0] * factor, vector[1] * factor)
+
+
+def normalize(vector):
+    length = math.hypot(vector[0], vector[1])
+    if length < EPSILON:
+        raise ValueError("Zero-length vector is not valid.")
+    return (vector[0] / length, vector[1] / length)
+
+
+def reflect(direction, normal):
+    factor = 2.0 * dot(direction, normal)
+    return normalize(subtract(direction, scale(normal, factor)))
+
+
+def signed_area(vertices):
+    area = 0.0
+    for index, current in enumerate(vertices):
+        nxt = vertices[(index + 1) % len(vertices)]
+        area += current[0] * nxt[1] - nxt[0] * current[1]
+    return area / 2.0
+
+
+def point_in_polygon(point, vertices):
+    inside = False
+    x, y = point
+    for index, current in enumerate(vertices):
+        nxt = vertices[(index + 1) % len(vertices)]
+        x1, y1 = current
+        x2, y2 = nxt
+        intersects = ((y1 > y) != (y2 > y))
+        if intersects:
+            x_intersection = (x2 - x1) * (y - y1) / (y2 - y1) + x1
+            if x < x_intersection:
+                inside = not inside
+    return inside
+
+
+def as_point(pair):
+    return (float(pair[0]), float(pair[1]))
+
+
+def dedupe_vertices(vertices):
+    cleaned = []
+    for vertex in vertices:
+        point = as_point(vertex)
+        if not cleaned or math.hypot(point[0] - cleaned[-1][0], point[1] - cleaned[-1][1]) > EPSILON:
+            cleaned.append(point)
+    if len(cleaned) > 1 and math.hypot(cleaned[0][0] - cleaned[-1][0], cleaned[0][1] - cleaned[-1][1]) <= EPSILON:
+        cleaned.pop()
+    return cleaned
+
+
+def approximate_chaos_vertices(width, radius, segments=48):
+    return build_trace_vertices(
+        {
+            "start": [-width / 2.0, -radius],
+            "closed": True,
+            "segments": [
+                {"type": "line", "to": [width / 2.0, -radius]},
+                {
+                    "type": "arc",
+                    "center": [width / 2.0, 0.0],
+                    "radius": radius,
+                    "end_angle": 90.0,
+                    "segments": segments,
+                },
+                {"type": "line", "to": [-width / 2.0, radius]},
+                {
+                    "type": "arc",
+                    "center": [-width / 2.0, 0.0],
+                    "radius": radius,
+                    "end_angle": 270.0,
+                    "segments": segments,
+                },
+            ],
+        }
+    )
+
+
+def sample_arc(current, segment):
+    center = as_point(segment["center"])
+    radius = float(segment.get("radius", math.hypot(current[0] - center[0], current[1] - center[1])))
+    start_angle = float(
+        segment.get(
+            "start_angle",
+            math.degrees(math.atan2(current[1] - center[1], current[0] - center[0])),
+        )
+    )
+    end_angle = float(segment["end_angle"])
+    steps = max(2, int(segment.get("segments", 32)))
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        angle = math.radians(start_angle + (end_angle - start_angle) * t)
+        points.append(
+            (
+                center[0] + radius * math.cos(angle),
+                center[1] + radius * math.sin(angle),
+            )
+        )
+    return points
+
+
+def sample_parabola(current, segment):
+    control = as_point(segment["control"])
+    end = as_point(segment["to"])
+    steps = max(2, int(segment.get("segments", 32)))
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        omt = 1.0 - t
+        x = omt * omt * current[0] + 2.0 * omt * t * control[0] + t * t * end[0]
+        y = omt * omt * current[1] + 2.0 * omt * t * control[1] + t * t * end[1]
+        points.append((x, y))
+    return points
+
+
+def sample_polynomial(current, segment):
+    end = as_point(segment["to"])
+    coefficients = [float(value) for value in segment.get("coefficients", [])]
+    steps = max(2, int(segment.get("segments", 48)))
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        base_x = current[0] + (end[0] - current[0]) * t
+        base_y = current[1] + (end[1] - current[1]) * t
+        offset = 0.0
+        for power, coefficient in enumerate(coefficients):
+            offset += coefficient * (t ** (power + 1)) * (1.0 - t)
+        points.append((base_x, base_y + offset))
+    return points
+
+
+def build_trace_vertices(shape):
+    if "start" not in shape or "segments" not in shape:
+        raise ValueError("Trace-based shape files require 'start' and 'segments'.")
+
+    current = as_point(shape["start"])
+    vertices = [current]
+    for segment in shape["segments"]:
+        kind = segment["type"]
+        if kind == "line":
+            points = [as_point(segment["to"])]
+        elif kind == "arc":
+            points = sample_arc(current, segment)
+        elif kind == "parabola":
+            points = sample_parabola(current, segment)
+        elif kind == "polynomial":
+            points = sample_polynomial(current, segment)
+        else:
+            raise ValueError("Unsupported trace segment type: {0}".format(kind))
+        vertices.extend(points)
+        current = vertices[-1]
+
+    if shape.get("closed", True):
+        vertices.append(vertices[0])
+    return dedupe_vertices(vertices)
+
+
+def build_vertices(mode, dim=None, shape_file=None):
+    if mode == "rectangular":
+        width, half_height = dim
+        return [
+            (-width / 2.0, -half_height),
+            (width / 2.0, -half_height),
+            (width / 2.0, half_height),
+            (-width / 2.0, half_height),
+        ]
+    if mode == "chaos":
+        width, radius = dim
+        return approximate_chaos_vertices(width, radius)
+    if mode == "polygon":
+        if not shape_file:
+            raise ValueError("Polygon mode requires a shape file.")
+        with open(shape_file, "r") as handle:
+            shape = json.load(handle)
+        if isinstance(shape, dict) and "vertices" in shape:
+            return dedupe_vertices(shape["vertices"])
+        if isinstance(shape, dict) and "segments" in shape:
+            return build_trace_vertices(shape)
+        if isinstance(shape, list):
+            return dedupe_vertices(shape)
+        raise ValueError("Unsupported shape file structure.")
+    raise ValueError("Unsupported mode: {0}".format(mode))
+
 
 class Reverb(object):
-    """Reverberation simulation by particle bouncing.
-    Note: Object is instantiated as
+    """Simulate 2D specular reflections inside a closed polygon."""
 
-    r = Reverb(p0, theta0, dim, mode)
-    p0: initial position, a tuple of two as (x, y) coordinate
-    theta0: initial direction, given in float.
-    dim: a tuple of two floats.  dim[0] is box width; dim[1] is half of box height, or radius.
-    mode: 'chaos' - cavity with two semicircles to obtain chaotic traces.
-          'retangular' - regular box cavity.
-
-    Coordinate details:
-    1. The center of the cavitiy is the origin (0, 0).
-    2. Theta > 0 from y-axis clockwise; theta < 0 counterclockwise.
-    """
-
-    def __init__(self, p0, theta0, dim, mode = 'chaos'):
-        """Mode can be 'chaos' or 'retangular'.
-        dim[0] is the width of the box.
-        mode == 'chaos' ==> dim[1] is the radius of the two semicircles on the left and right.
-        mode == 'retangular' ==> dim[1] is half of the box height.
-        """
+    def __init__(self, p0, theta0, dim=None, mode="chaos", shape_file=None):
         self.no = 0
         self.mode = mode
-        self.p = p0         ## initial (x,y) coordinate in tuple
-        self.theta = theta0 ## initial direction in deg
         self.dim = dim
-        bw = dim[0]         ## box width
-        radius = dim[1]     ## circle radius or half height
-        self.A = (bw/-2.0,  1.0*radius)
-        self.B = (bw/ 2.0,  1.0*radius)
-        self.C = (bw/ 2.0, -1.0*radius)
-        self.D = (bw/-2.0, -1.0*radius)
+        self.shape_file = shape_file
+        self.vertices = build_vertices(mode, dim=dim, shape_file=shape_file)
+        if len(self.vertices) < 3:
+            raise ValueError("A chamber requires at least three vertices.")
 
-    def _ang_p12(self, p1, p2):
-        vec = (p2[0] - p1[0], p2[1] - p1[1])
-        if vec[1] == 0 and vec[0] < 0:
-            theta = -90.0
-        elif vec[1] == 0 and vec[0] > 0:
-            theta = 90.0
-        else:
-            theta = math.atan(vec[0]/vec[1])*180/math.pi
-            if vec[1] < 0:
-                if theta > 0:
-                    theta = -180.0 + theta
-                else:
-                    theta =  180.0 + theta
-        return theta
+        self.orientation = signed_area(self.vertices)
+        if abs(self.orientation) < EPSILON:
+            raise ValueError("Polygon area is zero. Check the chamber vertices.")
 
-    def _solve_quadratic(self, b, c):
-        delta = b*b - 4*c
-        if delta < 0:
-            print("No solutions!")
-            exit()
-        root1 = (-b + delta**0.5)/2
-        root2 = (-b - delta**0.5)/2
-        return root1, root2
+        self.edges = []
+        for index, start in enumerate(self.vertices):
+            end = self.vertices[(index + 1) % len(self.vertices)]
+            edge = subtract(end, start)
+            normal = (-edge[1], edge[0]) if self.orientation > 0 else (edge[1], -edge[0])
+            self.edges.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "edge": edge,
+                    "normal": normalize(normal),
+                }
+            )
 
-    def _solve_parametric(self, px, py, radius, theta, mode = 'left'):
-        """Internal function to solve parametrically the intersection of the bounced line with the circles.
-        There will be two roots, i.e. two intersections.  Code will pick the right one."""
-        b = 2*(px*cos(theta) + py*sin(theta))
-        c = px**2 + py**2 - radius**2
-        t1, t2 = self._solve_quadratic(b, c)
-        x1 = px + t1*cos(theta)
-        x2 = px + t2*cos(theta)
-        if abs(x1-px) < 1e-5 or abs(x2-px) < 1e-5:
-            ### when two intersections are on the same semicircle.
-            if abs(x1-px) < 0.01:
-                px = x2
-                py = py + t2*sin(theta)
-            else:
-                px = x1
-                py = py + t1*sin(theta)
-        elif mode == 'left':
-            ### when one intersection is on the left semicircle.
-            if x1 > x2:
-                px = x2
-                py = py + t2*sin(theta)
-            else:
-                px = x1
-                py = py + t1*sin(theta)
-        elif mode == 'right':
-            ### when one intersection is on the right semicircle.
-            if x1 > x2:
-                px = x1
-                py = py + t1*sin(theta)
-            else:
-                px = x2
-                py = py + t2*sin(theta)
-        return px, py
-    
-        
-    def _ang_pA(self):
-        return self._ang_p12(self.p, self.A)
+        self.p = (float(p0[0]), float(p0[1]))
+        if not point_in_polygon(self.p, self.vertices):
+            raise ValueError("Initial position must lie inside the chamber.")
+        self.direction = normalize(theta_to_vector(theta0))
+        self.theta = vector_to_theta(self.direction)
 
-    def _ang_pB(self):
-        return self._ang_p12(self.p, self.B)
+    def _ray_segment_intersection(self, edge):
+        start = edge["start"]
+        segment = edge["edge"]
+        denominator = cross(self.direction, segment)
+        if abs(denominator) < EPSILON:
+            return None
 
-    def _ang_pC(self):
-        return self._ang_p12(self.p, self.C)
+        offset = subtract(start, self.p)
+        distance = cross(offset, segment) / denominator
+        portion = cross(offset, self.direction) / denominator
+        if distance <= ADVANCE_EPSILON:
+            return None
+        if portion < -ADVANCE_EPSILON or portion > 1.0 + ADVANCE_EPSILON:
+            return None
 
-    def _ang_pD(self):
-        return self._ang_p12(self.p, self.D)
+        hit_point = add(self.p, scale(self.direction, distance))
+        return {
+            "distance": distance,
+            "point": hit_point,
+            "normal": edge["normal"],
+        }
 
-    def _hitwhere(self):
-        """Return one of the four boundaries, left circle, right circle, ceiling, floor."""
-        px = self.p[0]
-        py = self.p[1]
-        theta = self.theta
-        bw = self.dim[0]
-        radius = self.dim[1]
-        PA = self._ang_pA()
-        PB = self._ang_pB()
-        PC = self._ang_pC()
-        PD = self._ang_pD()
-        if self.mode == 'rectangular':
-            if abs(px - (-bw/2)) < 1e-5:
-                if theta <= PB:
-                    return 'ceiling'
-                if theta >  PB and theta <  PC:
-                    return 'right'
-                if theta >= PC:
-                    return 'floor'
-            elif abs(px - bw/2) < 1e-5:
-                if theta >= PA:
-                    return 'ceiling'
-                if theta <  PA and theta >  PD:
-                    return 'left'
-                if theta <= PD:
-                    return 'floor'
-            elif abs(py - radius) < 1e-5:
-                if theta < PC and theta > 0:
-                    return 'right'
-                elif theta > PD and theta < 0:
-                    return 'left'
-                else:
-                    return 'floor'
-            elif abs(py - (-radius)) < 1e-5:
-                if theta > PB and theta > 0:
-                    return 'right'
-                elif theta < PA and theta < 0:
-                    return 'left'
-                else:
-                    return 'ceiling'
-            else:
-                if theta >= PA and theta <= PB:
-                    return 'ceiling'
-                if theta >  PB and theta <  PC:
-                    return 'right'
-                if theta <  PA and theta >  PD:
-                    return 'left'
-                else:
-                    return 'floor'
-                
-        elif self.mode == 'chaos':
-            if px <= -bw/2:
-                if theta >= PA and theta <= PB:
-                    return 'ceiling'
-                if theta >  PB and theta <  PC:
-                    return 'right'
-                if theta >= PC and theta <= PD:
-                    return 'floor'
-                else:
-                    return 'left'
-            if px >= bw/2:
-                if theta <= PB and theta >= PA:
-                    return 'ceiling'
-                if theta <  PA and theta >  PD:
-                    return 'left'
-                if theta <= PD and theta >= PC:
-                    return 'floor'
-                else:
-                    return 'right'
-            if px > -bw/2 and px < bw/2:
-                if theta >  PD and theta <  PA:
-                    return 'left'
-                if theta >= PA and theta <= PB:
-                    return 'ceiling'
-                if theta >  PB and theta <  PC:
-                    return 'right'
-                else:
-                    return 'floor'
+    def _next_collision(self):
+        collision = None
+        for edge in self.edges:
+            candidate = self._ray_segment_intersection(edge)
+            if candidate is None:
+                continue
+            if collision is None or candidate["distance"] < collision["distance"]:
+                collision = candidate
+        if collision is None:
+            raise RuntimeError("Unable to find the next boundary collision.")
+        return collision
 
+    def step(self):
+        collision = self._next_collision()
+        self.p = collision["point"]
+        self.direction = reflect(self.direction, collision["normal"])
+        self.theta = vector_to_theta(self.direction)
+        self.p = add(self.p, scale(self.direction, ADVANCE_EPSILON))
+        return self.p, self.theta
 
-    def _reflection_on_box(self):
-        if self.theta > 0:
-            self.theta =  180.0 - self.theta
-        else:
-            self.theta = -180.0 - self.theta
-    
-    def _reflection_on_floor(self):
-        px = self.p[0]
-        py = self.p[1]
-        theta = (-1*self.theta + 90.0)/180.0*math.pi
-        radius = self.dim[1]
-        self.p = (px + (-radius - py)/tan(theta), -radius)
-        self._reflection_on_box()
-
-    def _reflection_on_ceiling(self):
-        px = self.p[0]
-        py = self.p[1]
-        theta = (-1*self.theta + 90.0)/180.0*math.pi
-        radius = self.dim[1]
-        self.p = (px + (radius - py)/tan(theta), radius)
-        self._reflection_on_box()
-
-    def _reflection_on_right_wall(self):
-        bw = self.dim[0]
-        radius = self.dim[1]
-        ## initial px, py
-        theta = self.theta/180.0*math.pi
-        px = self.p[0]
-        py = self.p[1]
-        ## after bouncing at the wall
-        py = py + (bw/2 - px) / tan(theta)
-        px = bw / 2
-        self.p = (px, py)
-        self.theta = -self.theta
-            
-    def _reflection_on_left_wall(self):
-        bw = self.dim[0]
-        radius = self.dim[1]
-        ## initial px, py
-        theta = self.theta
-        px = self.p[0]
-        py = self.p[1]
-        ## after bouncing at the wall
-        py = py + (-bw/2 - px) / tan(theta/180.0*math.pi)
-        px = -bw / 2
-        self.p = (px, py)
-        self.theta = -self.theta
-
-    def _reflection_on_left_circle(self):
-        bw = self.dim[0]
-        radius = self.dim[1]
-        px = self.p[0] + bw/2.0
-        py = self.p[1]
-        theta = (-1*self.theta + 90.0)/180.0*math.pi
-        p = self._solve_parametric(px, py, radius, theta, mode = 'left')
-
-        if p[1] == 0:
-            phi = -90.0
-        else:
-            phi = atan(p[0] / p[1])*180/math.pi
-
-        if phi > 0:
-            phi = -180.0 + phi
-
-        self.theta = 180.0 - self.theta + 2*phi
-        if self.theta > 180:
-            self.theta = self.theta - 360
-        elif self.theta < -180:
-            self.theta = self.theta + 360
-        self.p = (p[0] - bw/2.0, p[1])
-        
-    def _reflection_on_right_circle(self):
-        bw = self.dim[0]
-        radius = self.dim[1]
-        px = self.p[0] - bw/2.0
-        py = self.p[1]
-        theta = (-1*self.theta + 90.0)/180.0*math.pi
-        p = self._solve_parametric(px, py, radius, theta, mode = 'right')
-  
-        if p[1] == 0:
-            phi = 90.0
-        else:
-            phi = atan(p[0] / p[1])*180/math.pi
-
-        if phi < 0:
-            phi = 180.0 + phi
-
-        self.theta = -180.0 - self.theta + 2*phi
-        if self.theta > 180:
-            self.theta = self.theta - 360
-        elif self.theta < -180:
-            self.theta = self.theta + 360
-        self.p = (p[0] + bw/2.0, p[1])
-              
-    def _hit_and_reflect(self):
-        hit = self._hitwhere()
-        # print('===DEGUG: before hit', self.p, self.theta)
-        # print(hit)
-        if hit == 'ceiling':
-            self._reflection_on_ceiling()
-        if hit == 'floor':
-            self._reflection_on_floor()
-        if hit == 'left':
-            if self.mode == 'chaos':
-                self._reflection_on_left_circle()
-            elif self.mode == 'rectangular':
-                self._reflection_on_left_wall()
-        if hit == 'right':
-            if self.mode == 'chaos':
-                self._reflection_on_right_circle()
-            elif self.mode == 'rectangular':
-                self._reflection_on_right_wall()
-        # print('===DEGUG: after hit', self.p, self.theta)    
-        # print('\n')
-
-        
-    def bounce(self, times, display = True, log = True, filename = "outcome.txt"):
-        """Bounce inside the chamebr by times (number of times)."""
+    def bounce(self, times, display=True, log=True, filename="outcome"):
         self.no = 0
+        handle = None
         if log:
-            f = open(filename + ".txt", "w")
-            f.write("## type:" + self.mode + "\n")
-            f.write("## dim:" + str(self.dim[0]) + ", " + str(self.dim[1]) + "\n")
-        while self.no < times:
-            if display:
-                self.print_info()
-            if log:
-                f.write(str(self.p[0]) + "\t" + str(self.p[1]) + "\t" + str(self.theta) + "\n")
-            self._hit_and_reflect()
-            yield self.p, self.theta
-            self.no += 1
-        if log:
-            f.close()
-        
+            handle = open(filename + ".txt", "w")
+            handle.write("## type:" + self.mode + "\n")
+            handle.write("## vertices:" + json.dumps(self.vertices) + "\n")
+
+        try:
+            while self.no < times:
+                if display:
+                    self.print_info()
+                if handle is not None:
+                    handle.write(
+                        "{0}\t{1}\t{2}\n".format(self.p[0], self.p[1], self.theta)
+                    )
+                self.step()
+                yield self.p, self.theta
+                self.no += 1
+        finally:
+            if handle is not None:
+                handle.close()
 
     def print_info(self):
         print("\n")
@@ -332,25 +326,7 @@ class Reverb(object):
         print("At position: {0}".format(self.p))
         print("Heading direction: {0}".format(self.theta))
 
-    def walkto(self, p, theta):
-        self.p = p
-        self.theta = theta
-            
-
-if __name__ == '__main__':
-
-    def test_chaos():
-        rc = Reverb(p0 = (0.49, -1), theta0 = 17.99, dim =(2.0, 1.0))
-        times = 3
-        a = rc.bounce(times)
-        for each in range(times):
-            next(a)
-
-    def test_ret():
-        rc = Reverb(p0 = (0, 0), theta0 = 45, dim =(200, 200), mode = 'rectangular')
-        times = 5
-        a = rc.bounce(times)
-        for each in range(times):
-            next(a)
-        
-    test_ret()
+    def walkto(self, point, theta):
+        self.p = point
+        self.direction = normalize(theta_to_vector(theta))
+        self.theta = vector_to_theta(self.direction)

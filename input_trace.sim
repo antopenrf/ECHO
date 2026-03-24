@@ -1,0 +1,9 @@
+type          polygon
+shape_file    shape_trace_demo.json
+p0            0, 0
+theta0        153
+times         1200
+display       False
+log           True
+draw          False
+filename      results_trace

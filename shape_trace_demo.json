@@ -1,0 +1,33 @@
+{
+  "start": [-260, -280],
+  "closed": true,
+  "segments": [
+    {
+      "type": "line",
+      "to": [180, -300]
+    },
+    {
+      "type": "parabola",
+      "control": [420, -40],
+      "to": [220, 280],
+      "segments": 28
+    },
+    {
+      "type": "line",
+      "to": [-120, 280]
+    },
+    {
+      "type": "polynomial",
+      "to": [-360, -60],
+      "coefficients": [180, -120],
+      "segments": 40
+    },
+    {
+      "type": "arc",
+      "center": [-280, -120],
+      "radius": 160,
+      "end_angle": 258,
+      "segments": 24
+    }
+  ]
+}

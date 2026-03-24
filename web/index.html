@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECHO Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="layout">
+    <section class="panel">
+      <h1>ECHO</h1>
+      <p class="lede">Real-time 2D ray tracing inside a user-built chamber. Build the boundary from lines and curves, then animate the bouncing path.</p>
+
+      <label class="field">
+        <span>Preset</span>
+        <select id="preset">
+          <option value="chaos">Chaos chamber</option>
+          <option value="rectangular">Rectangle</option>
+          <option value="irregular">Irregular polygon</option>
+          <option value="trace">Trace builder demo</option>
+        </select>
+      </label>
+
+      <div class="row">
+        <button id="applyShape" type="button">Apply Shape</button>
+      </div>
+
+      <div class="subpanel">
+        <h2>Builder</h2>
+        <div class="grid">
+          <label class="field">
+            <span>Start X</span>
+            <input id="builderStartX" type="number" value="-250">
+          </label>
+          <label class="field">
+            <span>Start Y</span>
+            <input id="builderStartY" type="number" value="-300">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Primitive</span>
+          <select id="primitiveType">
+            <option value="line">Straight</option>
+            <option value="arc">Arc / half circle</option>
+            <option value="parabola">Parabola</option>
+            <option value="polynomial">Polynomial</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Primitive Parameters JSON</span>
+          <textarea id="primitiveParams" spellcheck="false"></textarea>
+        </label>
+
+        <div class="row">
+          <button id="addPrimitive" type="button">Add Primitive</button>
+          <button id="undoPrimitive" type="button">Undo Last</button>
+        </div>
+
+        <div class="row">
+          <button id="clearBuilder" type="button">Clear Builder</button>
+          <button id="downloadShape" type="button">Download Shape</button>
+        </div>
+      </div>
+
+      <div class="subpanel">
+        <h2>Canvas Tools</h2>
+        <label class="field">
+          <span>Canvas Tool</span>
+          <select id="canvasTool">
+            <option value="line">Draw straight segments</option>
+            <option value="arc">Draw arc from current endpoint</option>
+            <option value="parabola">Draw parabola from current endpoint</option>
+            <option value="ray-start">Place ray start</option>
+          </select>
+        </label>
+
+        <div class="row">
+          <button id="closeCanvasShape" type="button">Close Chamber</button>
+          <button id="cancelCanvasTool" type="button">Cancel Pending</button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Shape JSON</span>
+        <textarea id="shapeJson" spellcheck="false"></textarea>
+      </label>
+
+      <div class="subpanel">
+        <h2>Simulation</h2>
+        <div class="grid">
+          <label class="field">
+            <span>Ray Start X</span>
+            <input id="startX" type="number" value="0">
+          </label>
+          <label class="field">
+            <span>Ray Start Y</span>
+            <input id="startY" type="number" value="0">
+          </label>
+          <label class="field">
+            <span>Theta</span>
+            <input id="theta" type="number" value="153">
+          </label>
+          <label class="field">
+            <span>Bounces</span>
+            <input id="steps" type="number" min="1" value="600">
+          </label>
+          <label class="field field-span">
+            <span>Speed: bounces per frame</span>
+            <input id="speed" type="range" min="1" max="40" value="4">
+          </label>
+        </div>
+
+        <div class="row triple">
+          <button id="run" type="button">Run Real-time</button>
+          <button id="pause" type="button">Pause</button>
+          <button id="reset" type="button">Reset</button>
+        </div>
+
+        <div class="row">
+          <button id="finish" type="button">Finish Instantly</button>
+          <button id="downloadTrace" type="button">Download Trace</button>
+        </div>
+
+        <div class="row">
+          <button id="openCharts" type="button">Open Charts</button>
+        </div>
+      </div>
+
+      <p class="hint">The shape JSON accepts either raw `vertices` or a trace spec with `start`, `segments`, and `closed`. Supported primitives: `line`, `arc`, `parabola`, `polynomial`.</p>
+      <pre id="summary" class="summary"></pre>
+    </section>
+
+    <section class="stage">
+      <canvas id="canvas" width="1200" height="900"></canvas>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

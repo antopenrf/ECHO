@@ -1,83 +1,168 @@
-##*ECHO*##
+## ECHO
 
-ECHO is the reverberation chamber simulation tool to implement simple ray bouncing algorithm.  Python 'Turtle' package is used to visualize the real-time bouncing traces.  The main purpose of this tool is to trace the chaotic behavior of special chamber shape.  The code is still under development but can simulate basic 2D rectangular box and one 2D chaotic chamber already.  Here is a list of features to develop in the future.
+ECHO is a 2D reverberation chamber study tool based on simple ray tracing. The current goal is not full electromagnetic fidelity. The goal is to study chamber geometry, chaotic behavior, bounce statistics, and qualitative spectral structure with a lightweight 2D model first. Full EM or higher-fidelity methods can be added later once the geometry and analysis workflow are better understood.
 
-1. Add function to calculate the mode density
-2. Extend to 3D
-3. Extend for simulating more chamber geometry
+The project started from two chamber types:
 
-Refer to the following publication for the 2D chaotic reverberation geometry used in this algorithm.
+1. A rectangular chamber
+2. A chaotic chamber based on opposing semicircular boundaries
 
-Reference: 'Chaotic Model of a New Reverberation Enclosure for EMC Compliance Testing in the Time Domain', Nicola Pasquino, IMTC 2004, Instrumentation and Measurement Technology Conference, Como, Italy, May 2004.
+It now supports more general 2D chambers defined as:
 
+1. Raw polygon vertices
+2. Trace-built shapes composed of `line`, `arc`, `parabola`, and `polynomial` primitives
 
-**Prerequisite:**
+This lets you prototype and compare candidate chamber boundaries quickly in either Python or the browser.
 
-1. Python 2.7.x or Python 3.x
+Reference for the original 2D chaotic chamber idea:
 
-2. Turtle
+Nicola Pasquino, "Chaotic Model of a New Reverberation Enclosure for EMC Compliance Testing in the Time Domain", IMTC 2004, Como, Italy, May 2004.
 
-3. matplotlib 1.4.x
+**Current Scope**
 
+ECHO currently focuses on:
 
-**Usage:**
+1. 2D specular ray bouncing inside a closed chamber
+2. Real-time trace visualization
+3. Trace logging
+4. Histogram analysis of bounce lengths
+5. Spectrum analysis of the ordered bounce-length sequence
+6. Fast geometry iteration for chaotic and non-chaotic chamber ideas
 
-Retrieve git repository.
-```
-git clone https://github.com/antopenrf/echo.git
-```
+ECHO does not currently attempt:
 
-Start the demo.
-```
->cd ECHO
->python sim.py
+1. Full-wave EM simulation
+2. Mode solving
+3. Material loss modeling
+4. 3D chamber simulation
 
-```
+**Requirements**
 
-**Examples:**
+1. Python 3.x
+2. `matplotlib`
 
-Edit the two input files, input_chaos.sim or input_rect.sim.  Then, run simulation as
+`sim.py` can run headless if your Python build does not include `tkinter`/`turtle`.
 
-```
->python sim.py input_chaos.sim  ## for chaotic reverberation simulation
->python sim.py input_rect.sim   ## for conventional reverberation simulation
-```
+**Setup**
 
-The simulation file is organized as below.
-
-1.type: either chaos or rectangular
-
-2.dim: For chaos type, dim[0] is the flat side width and dim[1] is the semicircle radius.  For rectangular type, dim[0] is the box width and dim[1] is half of the box height.
-
-3.p0: initial particle position
-
-4.theta0: initial particle heading direction
-
-5.times: number of simulation iterations
-
-6.display: True to show real time results on terminal
-
-7.log: True to save the simulation results
-
-8.draw: True to save the simulation figure
-
-9.filename: filenames to save the final results
-
-
-After starting the sim.py script, the real time particle bouncing should be displayed as shown below.
-![demo: chaotic reverberation](/demo_chaos.png)
-![demo: rectangular reverberation](/demo_rect.png)
-
-
-Then use the analyze.py script to generate histogram.  The chaotic reverberation chamber does show a great variety on the bouncing intersections between two consecutive nodes.
-```
->python analyze.py "the text file of the simulation results"
+```bash
+git clone https://github.com/antopenrf/ECHO.git
+cd ECHO
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-For example of the histogram for chaotic reverberation.
+**Python Workflow**
 
-![demo: chaotic reverberation](/demo_chaos_hist.png)
+Run the built-in chamber examples:
 
-For example of the histogram for rectangular reverberation.
-![demo: rectangular reverberation](/demo_rect_hist.png)
+```bash
+.venv/bin/python sim.py input_chaos.sim
+.venv/bin/python sim.py input_rect.sim
+.venv/bin/python sim.py input_polygon.sim
+.venv/bin/python sim.py input_trace.sim
+```
 
+Run the analyzer on a saved trace:
+
+```bash
+.venv/bin/python analyze.py results_demo_chaos.txt
+```
+
+The analysis now generates:
+
+1. `basename.png` for the bounce-length histogram
+2. `basename_spectrum.png` for the normalized bounce-length spectrum
+3. `basename_spectrum.txt` for the spectrum table
+
+**Simulation Inputs**
+
+The `.sim` files support:
+
+1. `type`: `chaos`, `rectangular`, or `polygon`
+2. `dim`: required for `chaos` and `rectangular`
+3. `p0`: initial particle position
+4. `theta0`: initial heading direction
+5. `times`: number of bounces
+6. `display`: print trace progress in the terminal
+7. `log`: save the trace to a text file
+8. `draw`: draw the path if `turtle` is available
+9. `filename`: output basename
+10. `shape_file`: required for `type polygon`
+
+For `type polygon`, the shape file can be either:
+
+1. A raw vertex list or object with `vertices`
+2. A trace specification with `start`, `segments`, and `closed`
+
+Example polygon shape:
+
+```json
+{
+  "vertices": [
+    [-420, -220],
+    [360, -260],
+    [520, 40],
+    [180, 300],
+    [-120, 260],
+    [-500, 60]
+  ]
+}
+```
+
+Example trace-built shape:
+
+```json
+{
+  "start": [-260, -280],
+  "closed": true,
+  "segments": [
+    { "type": "line", "to": [180, -300] },
+    { "type": "parabola", "control": [420, -40], "to": [220, 280], "segments": 28 },
+    { "type": "line", "to": [-120, 280] },
+    { "type": "polynomial", "to": [-360, -60], "coefficients": [180, -120], "segments": 40 },
+    { "type": "arc", "center": [-280, -120], "radius": 160, "end_angle": 258, "segments": 24 }
+  ]
+}
+```
+
+Supported trace segment types:
+
+1. `line`
+2. `arc`
+3. `parabola`
+4. `polynomial`
+
+**Browser Workflow**
+
+Serve the repo locally, for example on a non-conflicting port:
+
+```bash
+cd /Users/yulung/codes/ECHO
+python3 -m http.server 8001
+```
+
+Then open:
+
+`http://localhost:8001/web/index.html`
+
+The browser UI supports:
+
+1. Real-time ray animation
+2. Preset chamber loading
+3. Direct canvas drawing for straight segments
+4. Canvas-assisted creation of arcs and parabolas
+5. Full JSON editing of the chamber definition
+6. Trace download
+7. One-click histogram and spectrum charts in a separate HTML page
+
+**Why 2D First**
+
+This repo is intentionally biased toward fast chamber exploration instead of high-fidelity physics. The idea is:
+
+1. Start with simple 2D ray tracing
+2. Compare regular and chaotic chamber behavior quickly
+3. Study trace distributions and spectral signatures
+4. Use those results to decide which geometries are worth carrying into more expensive EM work later
+
+That makes ECHO a geometry and intuition-building tool first, and a full EM tool later if the study justifies it.
