@@ -1,13 +1,6 @@
 const EPSILON = 1e-9;
 const ADVANCE_EPSILON = 1e-7;
 
-const primitiveTemplates = {
-  line: { to: [250, -300] },
-  arc: { center: [250, 0], radius: 300, end_angle: 90, segments: 32 },
-  parabola: { control: [0, 360], to: [-250, 300], segments: 32 },
-  polynomial: { to: [-250, -300], coefficients: [280, -220], segments: 48 },
-};
-
 const presetShapes = {
   rectangular: {
     vertices: [
@@ -41,17 +34,17 @@ const presetShapes = {
     start: [-260, -280],
     closed: true,
     segments: [
-      { type: "line", to: [180, -300] },
-      { type: "parabola", control: [420, -40], to: [220, 280], segments: 28 },
-      { type: "line", to: [-120, 280] },
-      { type: "polynomial", to: [-360, -60], coefficients: [180, -120], segments: 40 },
-      { type: "arc", center: [-280, -120], radius: 160, end_angle: 258, segments: 24 },
+      { type: "line", to: [220, -280] },
+      { type: "arc", center: [220, 0], radius: 280, end_angle: 90, segments: 32 },
+      { type: "line", to: [-180, 280] },
+      { type: "parabola", control: [-420, 40], to: [-260, -280], segments: 36 },
     ],
   },
 };
 
 const state = {
   shapeSpec: clone(presetShapes.chaos),
+  boundary: null,
   vertices: [],
   boundaryClosed: true,
   trace: [],
@@ -63,16 +56,22 @@ const state = {
   view: null,
   pendingCanvasPoints: [],
   canvasStartArmed: false,
+  dragHandle: null,
+  dragOrigin: null,
+  dragAxisLock: null,
+  handles: [],
+  hoverHandle: null,
+  selectedHandle: null,
 };
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const presetSelect = document.getElementById("preset");
-const primitiveType = document.getElementById("primitiveType");
-const primitiveParams = document.getElementById("primitiveParams");
 const shapeJson = document.getElementById("shapeJson");
 const summary = document.getElementById("summary");
 const canvasTool = document.getElementById("canvasTool");
+const snapMode = document.getElementById("snapMode");
+const snapSize = document.getElementById("snapSize");
 
 presetSelect.addEventListener("change", () => {
   stopAnimation();
@@ -83,34 +82,8 @@ document.getElementById("applyShape").addEventListener("click", () => {
   try {
     stopAnimation();
     state.shapeSpec = parseShape(shapeJson.value);
-    state.canvasStartArmed = !!state.shapeSpec.segments;
-    state.vertices = compileShape(state.shapeSpec);
-    state.boundaryClosed = isValidChamber(state.vertices);
-    state.trace = [];
-    state.engine = null;
-    syncBuilderFields();
-    drawScene();
-    setSummary([
-      "Shape applied.",
-      `Boundary vertices: ${state.vertices.length}`,
-      `Closed chamber: ${state.boundaryClosed ? "yes" : "no"}`,
-      "Start the simulation to animate the ray.",
-    ].join("\n"));
-  } catch (error) {
-    setSummary(error.message);
-  }
-});
-
-document.getElementById("addPrimitive").addEventListener("click", () => {
-  try {
-    ensureBuilderShape();
-    const params = JSON.parse(primitiveParams.value);
-    state.shapeSpec.segments.push({ type: primitiveType.value, ...params });
-    syncShapeJson();
-    state.vertices = compileShape(state.shapeSpec);
-    state.boundaryClosed = isValidChamber(state.vertices);
-    drawScene();
-    setSummary(`${primitiveType.value} primitive added.`);
+    state.canvasStartArmed = hasTraceSegments(state.shapeSpec);
+    applyShapeSpec("Shape applied.");
   } catch (error) {
     setSummary(error.message);
   }
@@ -119,11 +92,7 @@ document.getElementById("addPrimitive").addEventListener("click", () => {
 document.getElementById("undoPrimitive").addEventListener("click", () => {
   ensureBuilderShape();
   state.shapeSpec.segments.pop();
-  syncShapeJson();
-  state.vertices = compileShape(state.shapeSpec);
-  state.boundaryClosed = isValidChamber(state.vertices);
-  drawScene();
-  setSummary("Removed the last primitive.");
+  refreshBuilderPreview("Removed the last segment.");
 });
 
 document.getElementById("clearBuilder").addEventListener("click", () => {
@@ -136,13 +105,9 @@ document.getElementById("clearBuilder").addEventListener("click", () => {
     closed: true,
     segments: [],
   };
-  state.vertices = compileShape(state.shapeSpec);
-  state.boundaryClosed = false;
-  state.trace = [];
+  state.pendingCanvasPoints = [];
   state.canvasStartArmed = false;
-  syncShapeJson();
-  drawScene();
-  setSummary("Builder cleared.");
+  applyShapeSpec("Builder cleared.");
 });
 
 document.getElementById("downloadShape").addEventListener("click", () => {
@@ -152,7 +117,7 @@ document.getElementById("downloadShape").addEventListener("click", () => {
 document.getElementById("run").addEventListener("click", () => {
   try {
     state.shapeSpec = parseShape(shapeJson.value);
-    state.canvasStartArmed = !!state.shapeSpec.segments;
+    state.canvasStartArmed = hasTraceSegments(state.shapeSpec);
     prepareSimulation();
     state.running = true;
     setSummary("Simulation running in real time.");
@@ -171,12 +136,8 @@ document.getElementById("reset").addEventListener("click", () => {
   stopAnimation();
   try {
     state.shapeSpec = parseShape(shapeJson.value);
-    state.canvasStartArmed = !!state.shapeSpec.segments;
-    state.vertices = compileShape(state.shapeSpec);
-    state.boundaryClosed = isValidChamber(state.vertices);
-    resetSimulationState();
-    drawScene();
-    setSummary("Simulation reset.");
+    state.canvasStartArmed = hasTraceSegments(state.shapeSpec);
+    applyShapeSpec("Simulation reset.");
   } catch (error) {
     setSummary(error.message);
   }
@@ -185,7 +146,7 @@ document.getElementById("reset").addEventListener("click", () => {
 document.getElementById("finish").addEventListener("click", () => {
   try {
     state.shapeSpec = parseShape(shapeJson.value);
-    state.canvasStartArmed = !!state.shapeSpec.segments;
+    state.canvasStartArmed = hasTraceSegments(state.shapeSpec);
     prepareSimulation();
     while (state.completedSteps < state.totalSteps) {
       stepSimulation();
@@ -218,57 +179,126 @@ document.getElementById("openCharts").addEventListener("click", () => {
     setSummary("Run the simulation before opening charts.");
     return;
   }
-  window.localStorage.setItem("echo-chart-data", JSON.stringify({
-    trace: state.trace,
-    vertices: state.vertices,
-    theta: state.engine ? state.engine.theta : Number(document.getElementById("theta").value),
-  }));
+  window.localStorage.setItem(
+    "echo-chart-data",
+    JSON.stringify({
+      trace: state.trace,
+      vertices: state.vertices,
+      theta: state.engine ? state.engine.theta : Number(document.getElementById("theta").value),
+    })
+  );
   window.open("charts.html", "_blank", "noopener");
 });
 
 document.getElementById("closeCanvasShape").addEventListener("click", () => {
   ensureBuilderShape();
   state.shapeSpec.closed = true;
-  refreshBuilderPreview();
-  setSummary("Canvas-built chamber closed.");
+  refreshBuilderPreview("Canvas-built chamber closed.");
 });
 
 document.getElementById("cancelCanvasTool").addEventListener("click", () => {
   state.pendingCanvasPoints = [];
+  drawScene();
   setSummary("Pending canvas tool points cleared.");
 });
 
 canvas.addEventListener("click", (event) => {
+  if (canvasTool.value === "edit" || state.dragHandle) {
+    return;
+  }
   try {
     handleCanvasClick(event);
   } catch (error) {
     setSummary(error.message);
   }
 });
+canvas.addEventListener("mousedown", (event) => {
+  if (canvasTool.value !== "edit") {
+    return;
+  }
+  try {
+    handlePointerDown(event);
+  } catch (error) {
+    setSummary(error.message);
+  }
+});
+window.addEventListener("mousemove", (event) => {
+  if (canvasTool.value === "edit" && !state.dragHandle) {
+    updateHoverHandle(event);
+  }
+  if (!state.dragHandle) {
+    return;
+  }
+  try {
+    handlePointerMove(event);
+  } catch (error) {
+    state.dragHandle = null;
+    state.dragOrigin = null;
+    state.dragAxisLock = null;
+    setSummary(error.message);
+  }
+});
+window.addEventListener("mouseup", () => {
+  if (!state.dragHandle) {
+    return;
+  }
+  state.selectedHandle = cloneHandleRef(state.dragHandle);
+  state.dragHandle = null;
+  state.dragOrigin = null;
+  state.dragAxisLock = null;
+  drawScene();
+  setSummary("Point updated.");
+});
+window.addEventListener("keydown", (event) => {
+  if (canvasTool.value !== "edit" || !state.selectedHandle) {
+    return;
+  }
+  const step = event.shiftKey ? 10 : 1;
+  let delta = null;
+  if (event.key === "ArrowUp") {
+    delta = [0, step];
+  } else if (event.key === "ArrowDown") {
+    delta = [0, -step];
+  } else if (event.key === "ArrowLeft") {
+    delta = [-step, 0];
+  } else if (event.key === "ArrowRight") {
+    delta = [step, 0];
+  }
+  if (!delta) {
+    return;
+  }
+  event.preventDefault();
+  const point = maybeSnap([
+    state.selectedHandle.point[0] + delta[0],
+    state.selectedHandle.point[1] + delta[1],
+  ]);
+  applyHandleMove(state.selectedHandle, point);
+  state.selectedHandle.point = point;
+  refreshBuilderPreview("Point nudged.");
+});
 
-primitiveType.addEventListener("change", syncPrimitiveTemplate);
 window.addEventListener("resize", drawScene);
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function hasTraceSegments(shape) {
+  return !!(shape && Array.isArray(shape.segments));
+}
+
 function loadPreset(name) {
   state.shapeSpec = clone(presetShapes[name]);
-  state.vertices = compileShape(state.shapeSpec);
-  state.boundaryClosed = isValidChamber(state.vertices);
-  state.trace = [];
-  state.engine = null;
-  state.canvasStartArmed = !!state.shapeSpec.segments;
-  syncBuilderFields();
-  syncShapeJson();
-  resetSimulationState();
-  drawScene();
-  setSummary(`${name} preset loaded.`);
+  state.canvasStartArmed = hasTraceSegments(state.shapeSpec);
+  applyShapeSpec(`${name} preset loaded.`);
+}
+
+function parseShape(source) {
+  return JSON.parse(source);
 }
 
 function ensureBuilderShape() {
-  if (!state.shapeSpec || !state.shapeSpec.segments) {
+  if (!hasTraceSegments(state.shapeSpec)) {
     state.shapeSpec = {
       start: [
         Number(document.getElementById("builderStartX").value),
@@ -277,22 +307,34 @@ function ensureBuilderShape() {
       closed: true,
       segments: [],
     };
+    state.canvasStartArmed = false;
   }
 }
 
-function refreshBuilderPreview() {
-  state.canvasStartArmed = !!state.shapeSpec.segments?.length;
-  state.vertices = compileShape(state.shapeSpec);
+function applyShapeSpec(prefix) {
+  state.boundary = compileBoundary(state.shapeSpec);
+  state.vertices = state.boundary.vertices;
   state.boundaryClosed = isValidChamber(state.vertices);
   state.trace = [];
   state.engine = null;
+  state.pendingCanvasPoints = [];
+  state.dragHandle = null;
+  state.dragOrigin = null;
+  state.dragAxisLock = null;
+  state.hoverHandle = null;
+  state.selectedHandle = null;
   syncBuilderFields();
   drawScene();
+  setSummary([
+    prefix,
+    `Boundary vertices: ${state.vertices.length}`,
+    `Closed chamber: ${state.boundaryClosed ? "yes" : "no"}`,
+  ].join("\n"));
 }
 
-function parseShape(source) {
-  const parsed = JSON.parse(source);
-  return parsed;
+function refreshBuilderPreview(prefix) {
+  state.canvasStartArmed = hasTraceSegments(state.shapeSpec) && state.shapeSpec.segments.length > 0;
+  applyShapeSpec(prefix);
 }
 
 function asPoint(pair) {
@@ -315,45 +357,41 @@ function dedupeVertices(vertices) {
   return cleaned;
 }
 
-function compileShape(shape) {
-  if (Array.isArray(shape)) {
-    return dedupeVertices(shape);
+function signedArea(vertices) {
+  let area = 0;
+  for (let index = 0; index < vertices.length; index += 1) {
+    const current = vertices[index];
+    const next = vertices[(index + 1) % vertices.length];
+    area += current[0] * next[1] - next[0] * current[1];
   }
-  if (shape.vertices) {
-    return dedupeVertices(shape.vertices);
-  }
-  if (!shape.start || !Array.isArray(shape.segments)) {
-    throw new Error("Shape JSON must contain either 'vertices' or trace-based 'start' and 'segments'.");
-  }
-
-  let current = asPoint(shape.start);
-  const vertices = [current];
-  for (const segment of shape.segments) {
-    let points = [];
-    if (segment.type === "line") {
-      points = [asPoint(segment.to)];
-    } else if (segment.type === "arc") {
-      points = sampleArc(current, segment);
-    } else if (segment.type === "parabola") {
-      points = sampleParabola(current, segment);
-    } else if (segment.type === "polynomial") {
-      points = samplePolynomial(current, segment);
-    } else {
-      throw new Error(`Unsupported segment type: ${segment.type}`);
-    }
-    vertices.push(...points);
-    current = vertices[vertices.length - 1];
-  }
-  if (shape.closed !== false) {
-    vertices.push(vertices[0]);
-  }
-  return dedupeVertices(vertices);
+  return area / 2;
 }
 
-function sampleArc(current, segment) {
+function unwrapAngle(angle, startAngle) {
+  while (angle - startAngle > 180) {
+    angle -= 360;
+  }
+  while (angle - startAngle < -180) {
+    angle += 360;
+  }
+  return angle;
+}
+
+function angleOnArc(angle, startAngle, endAngle) {
+  const adjusted = unwrapAngle(angle, startAngle);
+  const delta = endAngle - startAngle;
+  if (delta >= 0) {
+    return adjusted >= startAngle - 1e-7 && adjusted <= endAngle + 1e-7;
+  }
+  return adjusted >= endAngle - 1e-7 && adjusted <= startAngle + 1e-7;
+}
+
+function sampleArcPoints(current, segment) {
   const center = asPoint(segment.center);
   const radius = Number(segment.radius ?? Math.hypot(current[0] - center[0], current[1] - center[1]));
-  const startAngle = Number(segment.start_angle ?? (Math.atan2(current[1] - center[1], current[0] - center[0]) * 180 / Math.PI));
+  const startAngle = Number(
+    segment.start_angle ?? (Math.atan2(current[1] - center[1], current[0] - center[0]) * 180 / Math.PI)
+  );
   const endAngle = Number(segment.end_angle);
   const steps = Math.max(2, Number(segment.segments ?? 32));
   const points = [];
@@ -368,7 +406,7 @@ function sampleArc(current, segment) {
   return points;
 }
 
-function sampleParabola(current, segment) {
+function sampleParabolaPoints(current, segment) {
   const control = asPoint(segment.control);
   const end = asPoint(segment.to);
   const steps = Math.max(2, Number(segment.segments ?? 32));
@@ -384,7 +422,7 @@ function sampleParabola(current, segment) {
   return points;
 }
 
-function samplePolynomial(current, segment) {
+function samplePolynomialPoints(current, segment) {
   const end = asPoint(segment.to);
   const coefficients = (segment.coefficients ?? []).map(Number);
   const steps = Math.max(2, Number(segment.segments ?? 48));
@@ -402,9 +440,113 @@ function samplePolynomial(current, segment) {
   return points;
 }
 
+function buildLineEntity(start, end, orientation) {
+  const edge = subtract(end, start);
+  const normal = normalize(orientation > 0 ? [-edge[1], edge[0]] : [edge[1], -edge[0]]);
+  return { type: "line", start, end, edge, normal };
+}
+
+function buildLineEntities(vertices, orientation) {
+  const entities = [];
+  for (let index = 0; index < vertices.length; index += 1) {
+    const start = vertices[index];
+    const end = vertices[(index + 1) % vertices.length];
+    entities.push(buildLineEntity(start, end, orientation));
+  }
+  return entities;
+}
+
+function compileBoundary(shape) {
+  if (Array.isArray(shape)) {
+    const vertices = dedupeVertices(shape);
+    const orientation = signedArea(vertices);
+    return { vertices, entities: buildLineEntities(vertices, orientation), orientation };
+  }
+  if (shape.vertices) {
+    const vertices = dedupeVertices(shape.vertices);
+    const orientation = signedArea(vertices);
+    return { vertices, entities: buildLineEntities(vertices, orientation), orientation };
+  }
+  if (!shape.start || !Array.isArray(shape.segments)) {
+    throw new Error("Shape JSON must contain either 'vertices' or trace-based 'start' and 'segments'.");
+  }
+
+  let current = asPoint(shape.start);
+  const vertices = [current];
+  const deferredEntities = [];
+  for (const segment of shape.segments) {
+    if (segment.type === "line") {
+      const end = asPoint(segment.to);
+      vertices.push(end);
+      deferredEntities.push({ type: "line", start: current, end });
+      current = end;
+      continue;
+    }
+    if (segment.type === "arc") {
+      const center = asPoint(segment.center);
+      const radius = Number(segment.radius ?? Math.hypot(current[0] - center[0], current[1] - center[1]));
+      const startAngle = Number(
+        segment.start_angle ?? (Math.atan2(current[1] - center[1], current[0] - center[0]) * 180 / Math.PI)
+      );
+      const endAngle = Number(segment.end_angle);
+      deferredEntities.push({
+        type: "arc",
+        center,
+        radius,
+        start_angle: startAngle,
+        end_angle: endAngle,
+        ccw: endAngle >= startAngle,
+      });
+      const points = sampleArcPoints(current, segment);
+      vertices.push(...points);
+      current = points[points.length - 1];
+      continue;
+    }
+    if (segment.type === "parabola") {
+      const points = sampleParabolaPoints(current, segment);
+      for (const point of points) {
+        deferredEntities.push({ type: "line", start: current, end: point });
+        vertices.push(point);
+        current = point;
+      }
+      continue;
+    }
+    if (segment.type === "polynomial") {
+      const points = samplePolynomialPoints(current, segment);
+      for (const point of points) {
+        deferredEntities.push({ type: "line", start: current, end: point });
+        vertices.push(point);
+        current = point;
+      }
+      continue;
+    }
+    throw new Error(`Unsupported segment type: ${segment.type}`);
+  }
+
+  if (shape.closed !== false) {
+    vertices.push(vertices[0]);
+  }
+  const dedupedVertices = dedupeVertices(vertices);
+  const orientation = signedArea(dedupedVertices);
+  if (
+    shape.closed !== false &&
+    Math.hypot(current[0] - dedupedVertices[0][0], current[1] - dedupedVertices[0][1]) > EPSILON
+  ) {
+    deferredEntities.push({ type: "line", start: current, end: dedupedVertices[0] });
+  }
+  const entities = deferredEntities.map((entity) => {
+    if (entity.type === "line") {
+      return buildLineEntity(entity.start, entity.end, orientation);
+    }
+    return entity;
+  });
+  return { vertices: dedupedVertices, entities, orientation };
+}
+
 function prepareSimulation() {
   stopAnimation();
-  state.vertices = compileShape(state.shapeSpec);
+  state.boundary = compileBoundary(state.shapeSpec);
+  state.vertices = state.boundary.vertices;
   if (!isValidChamber(state.vertices)) {
     throw new Error("The current shape is not yet a valid closed chamber.");
   }
@@ -416,7 +558,7 @@ function prepareSimulation() {
   ];
   const theta = Number(document.getElementById("theta").value);
   state.totalSteps = Number(document.getElementById("steps").value);
-  state.engine = createEngine(state.vertices, start, theta);
+  state.engine = createEngine(state.boundary, start, theta);
   state.trace = [start.slice()];
   state.pendingCanvasPoints = [];
   drawScene();
@@ -429,30 +571,114 @@ function resetSimulationState() {
   state.totalSteps = Number(document.getElementById("steps").value);
 }
 
-function createEngine(vertices, start, theta) {
-  if (!pointInPolygon(start, vertices)) {
+function pointInPolygon(point, vertices) {
+  let inside = false;
+  const [x, y] = point;
+  for (let index = 0; index < vertices.length; index += 1) {
+    const [x1, y1] = vertices[index];
+    const [x2, y2] = vertices[(index + 1) % vertices.length];
+    const intersects = (y1 > y) !== (y2 > y);
+    if (intersects) {
+      const xIntersection = ((x2 - x1) * (y - y1)) / (y2 - y1) + x1;
+      if (x < xIntersection) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
+function createEngine(boundary, start, theta) {
+  if (!pointInPolygon(start, boundary.vertices)) {
     throw new Error("The ray start point must be inside the chamber.");
   }
   return {
-    vertices,
+    boundary,
     position: start.slice(),
     direction: normalize(thetaToVector(theta)),
     theta,
   };
 }
 
+function rayLineIntersection(position, direction, entity) {
+  const denominator = cross(direction, entity.edge);
+  if (Math.abs(denominator) < EPSILON) {
+    return null;
+  }
+  const offset = subtract(entity.start, position);
+  const distance = cross(offset, entity.edge) / denominator;
+  const portion = cross(offset, direction) / denominator;
+  if (distance <= ADVANCE_EPSILON) {
+    return null;
+  }
+  if (portion < -ADVANCE_EPSILON || portion > 1 + ADVANCE_EPSILON) {
+    return null;
+  }
+  return {
+    distance,
+    point: add(position, scale(direction, distance)),
+    normal: entity.normal,
+  };
+}
+
+function rayArcIntersection(position, direction, entity) {
+  const offset = subtract(position, entity.center);
+  const b = 2 * dot(direction, offset);
+  const c = dot(offset, offset) - entity.radius * entity.radius;
+  const delta = b * b - 4 * c;
+  if (delta < 0) {
+    return null;
+  }
+  const root = Math.sqrt(Math.max(delta, 0));
+  const candidates = [(-b - root) / 2, (-b + root) / 2];
+  let best = null;
+  for (const distance of candidates) {
+    if (distance <= ADVANCE_EPSILON) {
+      continue;
+    }
+    const point = add(position, scale(direction, distance));
+    const angle = Math.atan2(point[1] - entity.center[1], point[0] - entity.center[0]) * 180 / Math.PI;
+    if (!angleOnArc(angle, entity.start_angle, entity.end_angle)) {
+      continue;
+    }
+    const radial = normalize(subtract(point, entity.center));
+    const normal = scale(radial, entity.ccw ? -1 : 1);
+    const candidate = { distance, point, normal };
+    if (!best || distance < best.distance) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function nextCollision(position, direction, boundary) {
+  let best = null;
+  for (const entity of boundary.entities) {
+    const candidate = entity.type === "line"
+      ? rayLineIntersection(position, direction, entity)
+      : rayArcIntersection(position, direction, entity);
+    if (!candidate) {
+      continue;
+    }
+    if (!best || candidate.distance < best.distance) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 function stepSimulation() {
   if (!state.engine || state.completedSteps >= state.totalSteps) {
     return false;
   }
-  const collision = nextCollision(state.engine.position, state.engine.direction, state.vertices);
+  const collision = nextCollision(state.engine.position, state.engine.direction, state.engine.boundary);
   if (!collision) {
     throw new Error("No boundary collision was found. Check the chamber shape.");
   }
   state.trace.push(collision.point);
   state.engine.direction = reflect(state.engine.direction, collision.normal);
   state.engine.theta = vectorToTheta(state.engine.direction);
-  state.engine.position = add(collision.point, scale(state.engine.direction, ADVANCE_EPSILON));
+  state.engine.position = add(collision.point, scale(collision.normal, ADVANCE_EPSILON));
   state.completedSteps += 1;
   return true;
 }
@@ -489,38 +715,6 @@ function stopAnimation() {
   }
 }
 
-function nextCollision(position, direction, vertices) {
-  const orientation = signedArea(vertices);
-  let best = null;
-
-  for (let index = 0; index < vertices.length; index += 1) {
-    const start = vertices[index];
-    const end = vertices[(index + 1) % vertices.length];
-    const edge = subtract(end, start);
-    const denominator = cross(direction, edge);
-    if (Math.abs(denominator) < EPSILON) {
-      continue;
-    }
-
-    const offset = subtract(start, position);
-    const distance = cross(offset, edge) / denominator;
-    const portion = cross(offset, direction) / denominator;
-    if (distance <= ADVANCE_EPSILON) {
-      continue;
-    }
-    if (portion < -ADVANCE_EPSILON || portion > 1 + ADVANCE_EPSILON) {
-      continue;
-    }
-
-    const normal = normalize(orientation > 0 ? [-edge[1], edge[0]] : [edge[1], -edge[0]]);
-    const point = add(position, scale(direction, distance));
-    if (!best || distance < best.distance) {
-      best = { distance, point, normal };
-    }
-  }
-  return best;
-}
-
 function thetaToVector(thetaDeg) {
   const radians = thetaDeg * Math.PI / 180;
   return [Math.sin(radians), Math.cos(radians)];
@@ -534,38 +728,10 @@ function reflect(direction, normal) {
   return normalize(subtract(direction, scale(normal, 2 * dot(direction, normal))));
 }
 
-function pointInPolygon(point, vertices) {
-  let inside = false;
-  const [x, y] = point;
-  for (let index = 0; index < vertices.length; index += 1) {
-    const [x1, y1] = vertices[index];
-    const [x2, y2] = vertices[(index + 1) % vertices.length];
-    const intersects = (y1 > y) !== (y2 > y);
-    if (intersects) {
-      const xIntersection = ((x2 - x1) * (y - y1)) / (y2 - y1) + x1;
-      if (x < xIntersection) {
-        inside = !inside;
-      }
-    }
-  }
-  return inside;
-}
-
-function signedArea(vertices) {
-  let area = 0;
-  for (let index = 0; index < vertices.length; index += 1) {
-    const current = vertices[index];
-    const next = vertices[(index + 1) % vertices.length];
-    area += current[0] * next[1] - next[0] * current[1];
-  }
-  return area / 2;
-}
-
 function drawScene() {
   syncCanvasResolution();
   const view = buildView(state.vertices.length ? state.vertices : [[0, 0]], state.trace);
   state.view = view;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
   if (state.vertices.length) {
@@ -577,6 +743,7 @@ function drawScene() {
   drawRayStart(view);
   drawParticle(view);
   drawPendingCanvasPoints(view);
+  drawHandles(view);
 }
 
 function drawGrid() {
@@ -676,6 +843,75 @@ function drawPendingCanvasPoints(view) {
   ctx.restore();
 }
 
+function buildHandles() {
+  const handles = [
+    { kind: "ray-start", point: [Number(document.getElementById("startX").value), Number(document.getElementById("startY").value)] },
+  ];
+
+  if (state.shapeSpec.vertices) {
+    state.shapeSpec.vertices.forEach((vertex, index) => {
+      handles.push({ kind: "vertex", index, point: asPoint(vertex) });
+    });
+    return handles;
+  }
+
+  if (!hasTraceSegments(state.shapeSpec) || !state.shapeSpec.start) {
+    return handles;
+  }
+
+  handles.push({ kind: "start", point: asPoint(state.shapeSpec.start) });
+  let current = asPoint(state.shapeSpec.start);
+  state.shapeSpec.segments.forEach((segment, index) => {
+    if (segment.type === "line") {
+      handles.push({ kind: "line-end", index, point: asPoint(segment.to) });
+      current = asPoint(segment.to);
+    } else if (segment.type === "arc") {
+      handles.push({ kind: "arc-center", index, point: asPoint(segment.center) });
+      const arcPoints = sampleArcPoints(current, segment);
+      handles.push({ kind: "arc-end", index, point: arcPoints[arcPoints.length - 1] });
+      current = arcPoints[arcPoints.length - 1];
+    } else if (segment.type === "parabola") {
+      handles.push({ kind: "parabola-control", index, point: asPoint(segment.control) });
+      handles.push({ kind: "parabola-end", index, point: asPoint(segment.to) });
+      current = asPoint(segment.to);
+    } else if (segment.type === "polynomial") {
+      handles.push({ kind: "poly-end", index, point: asPoint(segment.to) });
+      current = asPoint(segment.to);
+    }
+  });
+  return handles;
+}
+
+function drawHandles(view) {
+  state.handles = buildHandles();
+  if (canvasTool.value !== "edit") {
+    return;
+  }
+  ctx.save();
+  ctx.font = "12px SFMono-Regular, Consolas, monospace";
+  for (const handle of state.handles) {
+    const [x, y] = worldToCanvas(handle.point, view);
+    const active = sameHandle(handle, state.dragHandle) || sameHandle(handle, state.selectedHandle);
+    const hover = sameHandle(handle, state.hoverHandle);
+    ctx.fillStyle = active
+      ? "#0f7a5d"
+      : hover
+        ? "#7a3213"
+        : handle.kind === "ray-start"
+          ? "#1f1b18"
+          : "#b24d22";
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(x, y, active ? 7 : 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(31, 27, 24, 0.82)";
+    ctx.fillText(handleLabel(handle), x + 10, y - 10);
+  }
+  ctx.restore();
+}
+
 function buildView(vertices, trace) {
   const points = vertices.concat(trace);
   let minX = Infinity;
@@ -715,6 +951,11 @@ function canvasToWorld(x, y, view) {
   ];
 }
 
+function getCanvasWorldPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return maybeSnap(canvasToWorld(event.clientX - rect.left, event.clientY - rect.top, state.view));
+}
+
 function syncCanvasResolution() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
@@ -724,19 +965,11 @@ function syncCanvasResolution() {
   }
 }
 
-function syncPrimitiveTemplate() {
-  primitiveParams.value = JSON.stringify(primitiveTemplates[primitiveType.value], null, 2);
-}
-
 function syncBuilderFields() {
   if (state.shapeSpec.start) {
     document.getElementById("builderStartX").value = state.shapeSpec.start[0];
     document.getElementById("builderStartY").value = state.shapeSpec.start[1];
   }
-  syncShapeJson();
-}
-
-function syncShapeJson() {
   shapeJson.value = JSON.stringify(state.shapeSpec, null, 2);
 }
 
@@ -756,23 +989,54 @@ function updateSummary(prefix) {
   setSummary(lines.join("\n"));
 }
 
+function setSummary(message) {
+  summary.textContent = message;
+}
+
+function handleLabel(handle) {
+  switch (handle.kind) {
+    case "ray-start":
+      return "ray";
+    case "vertex":
+      return `v${handle.index}`;
+    case "start":
+      return "start";
+    case "line-end":
+      return `line ${handle.index + 1}`;
+    case "arc-center":
+      return `arc ${handle.index + 1} c`;
+    case "arc-end":
+      return `arc ${handle.index + 1} end`;
+    case "parabola-control":
+      return `par ${handle.index + 1} c`;
+    case "parabola-end":
+      return `par ${handle.index + 1} end`;
+    case "poly-end":
+      return `poly ${handle.index + 1}`;
+    default:
+      return handle.kind;
+  }
+}
+
 function isValidChamber(vertices) {
   return vertices.length >= 3 && Math.abs(signedArea(vertices)) > EPSILON;
 }
 
 function getBuilderCursor() {
   ensureBuilderShape();
-  const preview = compileShape({
+  const preview = compileBoundary({
     start: state.shapeSpec.start,
     closed: false,
     segments: state.shapeSpec.segments,
   });
-  return preview[preview.length - 1] ?? asPoint(state.shapeSpec.start);
+  return preview.vertices[preview.vertices.length - 1] ?? asPoint(state.shapeSpec.start);
 }
 
 function handleCanvasClick(event) {
-  const rect = canvas.getBoundingClientRect();
-  const worldPoint = canvasToWorld(event.clientX - rect.left, event.clientY - rect.top, state.view);
+  if (!state.view) {
+    return;
+  }
+  const worldPoint = getCanvasWorldPoint(event);
   const tool = canvasTool.value;
 
   if (tool === "ray-start") {
@@ -784,23 +1048,18 @@ function handleCanvasClick(event) {
   }
 
   ensureBuilderShape();
-
   if (!state.shapeSpec.segments.length && !state.canvasStartArmed) {
     state.shapeSpec.start = [worldPoint[0], worldPoint[1]];
     document.getElementById("builderStartX").value = worldPoint[0].toFixed(2);
     document.getElementById("builderStartY").value = worldPoint[1].toFixed(2);
     state.canvasStartArmed = true;
-    state.pendingCanvasPoints = [];
-    refreshBuilderPreview();
-    setSummary("Canvas start point placed. Click again to add the first segment.");
+    refreshBuilderPreview("Canvas start point placed. Click again to add the first segment.");
     return;
   }
 
   if (tool === "line") {
     state.shapeSpec.segments.push({ type: "line", to: [worldPoint[0], worldPoint[1]] });
-    state.pendingCanvasPoints = [];
-    refreshBuilderPreview();
-    setSummary(`Line segment added to (${worldPoint[0].toFixed(2)}, ${worldPoint[1].toFixed(2)}).`);
+    refreshBuilderPreview(`Line segment added to (${worldPoint[0].toFixed(2)}, ${worldPoint[1].toFixed(2)}).`);
     return;
   }
 
@@ -827,8 +1086,7 @@ function handleCanvasClick(event) {
       segments: 32,
     });
     state.pendingCanvasPoints = [];
-    refreshBuilderPreview();
-    setSummary("Arc segment added from the current endpoint.");
+    refreshBuilderPreview("Arc segment added.");
     return;
   }
 
@@ -842,8 +1100,7 @@ function handleCanvasClick(event) {
       segments: 32,
     });
     state.pendingCanvasPoints = [];
-    refreshBuilderPreview();
-    setSummary("Parabola segment added from the current endpoint.");
+    refreshBuilderPreview("Parabola segment added.");
     return;
   }
 
@@ -855,8 +1112,145 @@ function handleCanvasClick(event) {
   }
 }
 
-function setSummary(message) {
-  summary.textContent = message;
+function nearestHandle(worldPoint) {
+  let best = null;
+  for (const handle of buildHandles()) {
+    const distance = Math.hypot(worldPoint[0] - handle.point[0], worldPoint[1] - handle.point[1]);
+    if (!best || distance < best.distance) {
+      best = { ...handle, distance };
+    }
+  }
+  if (!best || best.distance > 18 / Math.max(state.view?.scale ?? 1, 1e-9)) {
+    return null;
+  }
+  return best;
+}
+
+function handlePointerDown(event) {
+  const worldPoint = getCanvasWorldPoint(event);
+  state.dragHandle = nearestHandle(worldPoint);
+  if (!state.dragHandle) {
+    state.selectedHandle = null;
+    setSummary("Edit mode: drag a visible handle.");
+    drawScene();
+    return;
+  }
+  state.selectedHandle = cloneHandleRef(state.dragHandle);
+  state.dragOrigin = [...state.dragHandle.point];
+  state.dragAxisLock = null;
+  drawScene();
+}
+
+function handlePointerMove(event) {
+  let worldPoint = getCanvasWorldPoint(event);
+  if (event.shiftKey && state.dragOrigin) {
+    if (!state.dragAxisLock) {
+      const dx = Math.abs(worldPoint[0] - state.dragOrigin[0]);
+      const dy = Math.abs(worldPoint[1] - state.dragOrigin[1]);
+      state.dragAxisLock = dx >= dy ? "x" : "y";
+    }
+    if (state.dragAxisLock === "x") {
+      worldPoint = [worldPoint[0], state.dragOrigin[1]];
+    } else if (state.dragAxisLock === "y") {
+      worldPoint = [state.dragOrigin[0], worldPoint[1]];
+    }
+    worldPoint = maybeSnap(worldPoint);
+  } else {
+    state.dragAxisLock = null;
+  }
+  applyHandleMove(state.dragHandle, worldPoint);
+  state.dragHandle.point = worldPoint;
+  refreshBuilderPreview(
+    state.dragAxisLock
+      ? `Point dragging with ${state.dragAxisLock === "x" ? "horizontal" : "vertical"} lock...`
+      : "Point dragging..."
+  );
+}
+
+function maybeSnap(point) {
+  if (snapMode.value !== "grid") {
+    return point;
+  }
+  const size = Math.max(Number(snapSize.value), 1);
+  return [
+    Math.round(point[0] / size) * size,
+    Math.round(point[1] / size) * size,
+  ];
+}
+
+function updateHoverHandle(event) {
+  const handle = nearestHandle(getCanvasWorldPoint(event));
+  if (!sameHandle(handle, state.hoverHandle)) {
+    state.hoverHandle = handle ? cloneHandleRef(handle) : null;
+    drawScene();
+  }
+}
+
+function sameHandle(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+  return a.kind === b.kind && a.index === b.index;
+}
+
+function cloneHandleRef(handle) {
+  if (!handle) {
+    return null;
+  }
+  return {
+    kind: handle.kind,
+    index: handle.index,
+    point: [...handle.point],
+  };
+}
+
+function applyHandleMove(handle, worldPoint) {
+  if (handle.kind === "ray-start") {
+    document.getElementById("startX").value = worldPoint[0].toFixed(2);
+    document.getElementById("startY").value = worldPoint[1].toFixed(2);
+    return;
+  }
+  if (state.shapeSpec.vertices) {
+    state.shapeSpec.vertices[handle.index] = [worldPoint[0], worldPoint[1]];
+    return;
+  }
+  if (handle.kind === "start") {
+    state.shapeSpec.start = [worldPoint[0], worldPoint[1]];
+    return;
+  }
+  const segment = state.shapeSpec.segments[handle.index];
+  if (handle.kind === "line-end" || handle.kind === "poly-end" || handle.kind === "parabola-end") {
+    segment.to = [worldPoint[0], worldPoint[1]];
+    return;
+  }
+  if (handle.kind === "parabola-control") {
+    segment.control = [worldPoint[0], worldPoint[1]];
+    return;
+  }
+  if (handle.kind === "arc-center") {
+    const startPoint = arcStartPoint(handle.index);
+    segment.center = [worldPoint[0], worldPoint[1]];
+    segment.radius = Math.hypot(startPoint[0] - worldPoint[0], startPoint[1] - worldPoint[1]);
+    return;
+  }
+  if (handle.kind === "arc-end") {
+    const center = asPoint(segment.center);
+    segment.end_angle = Math.atan2(worldPoint[1] - center[1], worldPoint[0] - center[0]) * 180 / Math.PI;
+  }
+}
+
+function arcStartPoint(segmentIndex) {
+  let current = asPoint(state.shapeSpec.start);
+  for (let index = 0; index < segmentIndex; index += 1) {
+    const segment = state.shapeSpec.segments[index];
+    if (segment.type === "line" || segment.type === "parabola" || segment.type === "polynomial") {
+      current = asPoint(segment.to);
+    } else if (segment.type === "arc") {
+      const points = sampleArcPoints(current, segment);
+      current = points[points.length - 1];
+    }
+  }
+  return current;
 }
 
 function downloadText(filename, content) {
@@ -891,8 +1285,10 @@ function scale(vector, factor) {
 
 function normalize(vector) {
   const length = Math.hypot(vector[0], vector[1]);
+  if (length < EPSILON) {
+    throw new Error("Zero-length vector is not valid.");
+  }
   return [vector[0] / length, vector[1] / length];
 }
 
-syncPrimitiveTemplate();
 loadPreset("chaos");

@@ -39,28 +39,12 @@
           </label>
         </div>
 
-        <label class="field">
-          <span>Primitive</span>
-          <select id="primitiveType">
-            <option value="line">Straight</option>
-            <option value="arc">Arc / half circle</option>
-            <option value="parabola">Parabola</option>
-            <option value="polynomial">Polynomial</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Primitive Parameters JSON</span>
-          <textarea id="primitiveParams" spellcheck="false"></textarea>
-        </label>
-
         <div class="row">
-          <button id="addPrimitive" type="button">Add Primitive</button>
           <button id="undoPrimitive" type="button">Undo Last</button>
+          <button id="clearBuilder" type="button">Clear Builder</button>
         </div>
 
         <div class="row">
-          <button id="clearBuilder" type="button">Clear Builder</button>
           <button id="downloadShape" type="button">Download Shape</button>
         </div>
       </div>
@@ -73,6 +57,7 @@
             <option value="line">Draw straight segments</option>
             <option value="arc">Draw arc from current endpoint</option>
             <option value="parabola">Draw parabola from current endpoint</option>
+            <option value="edit">Edit points</option>
             <option value="ray-start">Place ray start</option>
           </select>
         </label>
@@ -80,6 +65,20 @@
         <div class="row">
           <button id="closeCanvasShape" type="button">Close Chamber</button>
           <button id="cancelCanvasTool" type="button">Cancel Pending</button>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>Snap</span>
+            <select id="snapMode">
+              <option value="off">Off</option>
+              <option value="grid">Grid</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Grid Size</span>
+            <input id="snapSize" type="number" value="20" min="1">
+          </label>
         </div>
       </div>
 
@@ -129,7 +128,7 @@
         </div>
       </div>
 
-      <p class="hint">The shape JSON accepts either raw `vertices` or a trace spec with `start`, `segments`, and `closed`. Supported primitives: `line`, `arc`, `parabola`, `polynomial`.</p>
+      <p class="hint">Use the canvas tool as the main builder. The shape JSON is still available for advanced editing. Trace-based shapes support `line`, `arc`, `parabola`, and `polynomial` primitives.</p>
       <pre id="summary" class="summary"></pre>
     </section>
 

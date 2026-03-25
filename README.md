@@ -23,11 +23,12 @@ Nicola Pasquino, "Chaotic Model of a New Reverberation Enclosure for EMC Complia
 ECHO currently focuses on:
 
 1. 2D specular ray bouncing inside a closed chamber
-2. Real-time trace visualization
-3. Trace logging
-4. Histogram analysis of bounce lengths
-5. Spectrum analysis of the ordered bounce-length sequence
-6. Fast geometry iteration for chaotic and non-chaotic chamber ideas
+2. Exact circular-arc reflections for arc boundaries
+3. Real-time trace visualization
+4. Trace logging
+5. Histogram analysis of bounce lengths
+6. Spectrum analysis of the ordered bounce-length sequence
+7. Fast geometry iteration for chaotic and non-chaotic chamber ideas
 
 ECHO does not currently attempt:
 
@@ -117,11 +118,10 @@ Example trace-built shape:
   "start": [-260, -280],
   "closed": true,
   "segments": [
-    { "type": "line", "to": [180, -300] },
-    { "type": "parabola", "control": [420, -40], "to": [220, 280], "segments": 28 },
-    { "type": "line", "to": [-120, 280] },
-    { "type": "polynomial", "to": [-360, -60], "coefficients": [180, -120], "segments": 40 },
-    { "type": "arc", "center": [-280, -120], "radius": 160, "end_angle": 258, "segments": 24 }
+    { "type": "line", "to": [220, -280] },
+    { "type": "arc", "center": [220, 0], "radius": 280, "end_angle": 90, "segments": 32 },
+    { "type": "line", "to": [-180, 280] },
+    { "type": "parabola", "control": [-420, 40], "to": [-260, -280], "segments": 36 }
   ]
 }
 ```
@@ -150,11 +150,25 @@ The browser UI supports:
 
 1. Real-time ray animation
 2. Preset chamber loading
-3. Direct canvas drawing for straight segments
-4. Canvas-assisted creation of arcs and parabolas
-5. Full JSON editing of the chamber definition
+3. Simplified canvas-first chamber construction
+4. Direct canvas drawing for lines, arcs, and parabolas
+5. Full JSON editing of the chamber definition when needed
 6. Trace download
 7. One-click histogram and spectrum charts in a separate HTML page
+
+**Screenshots**
+
+Interactive browser simulator:
+
+![ECHO browser simulator](web/screenshot_simulator.png)
+
+Example bounce-length histogram:
+
+![Bounce-length histogram](results_demo_chaos.png)
+
+Example normalized bounce-length spectrum:
+
+![Normalized bounce-length spectrum](results_demo_chaos_spectrum.png)
 
 **Why 2D First**
 

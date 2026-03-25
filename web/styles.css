@@ -177,6 +177,10 @@ canvas {
   cursor: crosshair;
 }
 
+.handle-label {
+  pointer-events: none;
+}
+
 @media (max-width: 1040px) {
   .layout {
     grid-template-columns: 1fr;

@@ -85,34 +85,23 @@ def dedupe_vertices(vertices):
     return cleaned
 
 
-def approximate_chaos_vertices(width, radius, segments=48):
-    return build_trace_vertices(
-        {
-            "start": [-width / 2.0, -radius],
-            "closed": True,
-            "segments": [
-                {"type": "line", "to": [width / 2.0, -radius]},
-                {
-                    "type": "arc",
-                    "center": [width / 2.0, 0.0],
-                    "radius": radius,
-                    "end_angle": 90.0,
-                    "segments": segments,
-                },
-                {"type": "line", "to": [-width / 2.0, radius]},
-                {
-                    "type": "arc",
-                    "center": [-width / 2.0, 0.0],
-                    "radius": radius,
-                    "end_angle": 270.0,
-                    "segments": segments,
-                },
-            ],
-        }
-    )
+def unwrap_angle(angle, start_angle):
+    while angle - start_angle > 180.0:
+        angle -= 360.0
+    while angle - start_angle < -180.0:
+        angle += 360.0
+    return angle
 
 
-def sample_arc(current, segment):
+def angle_on_arc(angle, start_angle, end_angle):
+    adjusted = unwrap_angle(angle, start_angle)
+    delta = end_angle - start_angle
+    if delta >= 0:
+        return start_angle - 1e-7 <= adjusted <= end_angle + 1e-7
+    return end_angle - 1e-7 <= adjusted <= start_angle + 1e-7
+
+
+def sample_arc_points(current, segment):
     center = as_point(segment["center"])
     radius = float(segment.get("radius", math.hypot(current[0] - center[0], current[1] - center[1])))
     start_angle = float(
@@ -136,7 +125,7 @@ def sample_arc(current, segment):
     return points
 
 
-def sample_parabola(current, segment):
+def sample_parabola_points(current, segment):
     control = as_point(segment["control"])
     end = as_point(segment["to"])
     steps = max(2, int(segment.get("segments", 32)))
@@ -150,7 +139,7 @@ def sample_parabola(current, segment):
     return points
 
 
-def sample_polynomial(current, segment):
+def sample_polynomial_points(current, segment):
     end = as_point(segment["to"])
     coefficients = [float(value) for value in segment.get("coefficients", [])]
     steps = max(2, int(segment.get("segments", 48)))
@@ -166,22 +155,62 @@ def sample_polynomial(current, segment):
     return points
 
 
-def build_trace_vertices(shape):
-    if "start" not in shape or "segments" not in shape:
-        raise ValueError("Trace-based shape files require 'start' and 'segments'.")
+def build_line_entity(start, end, orientation):
+    edge = subtract(end, start)
+    normal = (-edge[1], edge[0]) if orientation > 0 else (edge[1], -edge[0])
+    return {
+        "type": "line",
+        "start": start,
+        "end": end,
+        "edge": edge,
+        "normal": normalize(normal),
+    }
 
+
+def build_line_entities(vertices, orientation):
+    entities = []
+    for index, start in enumerate(vertices):
+        end = vertices[(index + 1) % len(vertices)]
+        entities.append(build_line_entity(start, end, orientation))
+    return entities
+
+
+def build_trace_boundary(shape):
     current = as_point(shape["start"])
     vertices = [current]
+    entities = []
     for segment in shape["segments"]:
         kind = segment["type"]
         if kind == "line":
-            points = [as_point(segment["to"])]
-        elif kind == "arc":
-            points = sample_arc(current, segment)
+            end = as_point(segment["to"])
+            vertices.append(end)
+            current = end
+            continue
+        if kind == "arc":
+            center = as_point(segment["center"])
+            radius = float(segment.get("radius", math.hypot(current[0] - center[0], current[1] - center[1])))
+            start_angle = float(
+                segment.get(
+                    "start_angle",
+                    math.degrees(math.atan2(current[1] - center[1], current[0] - center[0])),
+                )
+            )
+            end_angle = float(segment["end_angle"])
+            entities.append(
+                {
+                    "type": "arc",
+                    "center": center,
+                    "radius": radius,
+                    "start_angle": start_angle,
+                    "end_angle": end_angle,
+                    "ccw": end_angle >= start_angle,
+                }
+            )
+            points = sample_arc_points(current, segment)
         elif kind == "parabola":
-            points = sample_parabola(current, segment)
+            points = sample_parabola_points(current, segment)
         elif kind == "polynomial":
-            points = sample_polynomial(current, segment)
+            points = sample_polynomial_points(current, segment)
         else:
             raise ValueError("Unsupported trace segment type: {0}".format(kind))
         vertices.extend(points)
@@ -189,65 +218,153 @@ def build_trace_vertices(shape):
 
     if shape.get("closed", True):
         vertices.append(vertices[0])
-    return dedupe_vertices(vertices)
+    vertices = dedupe_vertices(vertices)
+    orientation = signed_area(vertices)
+    if abs(orientation) < EPSILON:
+        raise ValueError("Polygon area is zero. Check the chamber vertices.")
+
+    if not entities:
+        return {
+            "vertices": vertices,
+            "entities": build_line_entities(vertices, orientation),
+            "orientation": orientation,
+        }
+
+    exact_entities = []
+    cursor = vertices[0]
+    trace_index = 1
+    for segment in shape["segments"]:
+        kind = segment["type"]
+        if kind == "line":
+            end = as_point(segment["to"])
+            exact_entities.append(build_line_entity(cursor, end, orientation))
+            cursor = end
+        elif kind == "arc":
+            center = as_point(segment["center"])
+            radius = float(segment.get("radius", math.hypot(cursor[0] - center[0], cursor[1] - center[1])))
+            start_angle = float(
+                segment.get(
+                    "start_angle",
+                    math.degrees(math.atan2(cursor[1] - center[1], cursor[0] - center[0])),
+                )
+            )
+            end_angle = float(segment["end_angle"])
+            exact_entities.append(
+                {
+                    "type": "arc",
+                    "center": center,
+                    "radius": radius,
+                    "start_angle": start_angle,
+                    "end_angle": end_angle,
+                    "ccw": end_angle >= start_angle,
+                }
+            )
+            cursor = sample_arc_points(cursor, segment)[-1]
+        else:
+            if kind == "parabola":
+                points = sample_parabola_points(cursor, segment)
+            else:
+                points = sample_polynomial_points(cursor, segment)
+            local_vertices = [cursor] + points
+            for index in range(len(local_vertices) - 1):
+                exact_entities.append(
+                    build_line_entity(local_vertices[index], local_vertices[index + 1], orientation)
+                )
+            cursor = points[-1]
+
+    if shape.get("closed", True) and math.hypot(cursor[0] - vertices[0][0], cursor[1] - vertices[0][1]) > EPSILON:
+        exact_entities.append(build_line_entity(cursor, vertices[0], orientation))
+
+    return {
+        "vertices": vertices,
+        "entities": exact_entities,
+        "orientation": orientation,
+    }
 
 
-def build_vertices(mode, dim=None, shape_file=None):
+def approximate_chaos_shape(width, radius, segments=48):
+    return {
+        "start": [-width / 2.0, -radius],
+        "closed": True,
+        "segments": [
+            {"type": "line", "to": [width / 2.0, -radius]},
+            {
+                "type": "arc",
+                "center": [width / 2.0, 0.0],
+                "radius": radius,
+                "end_angle": 90.0,
+                "segments": segments,
+            },
+            {"type": "line", "to": [-width / 2.0, radius]},
+            {
+                "type": "arc",
+                "center": [-width / 2.0, 0.0],
+                "radius": radius,
+                "end_angle": 270.0,
+                "segments": segments,
+            },
+        ],
+    }
+
+
+def build_boundary(mode, dim=None, shape_file=None):
     if mode == "rectangular":
         width, half_height = dim
-        return [
+        vertices = [
             (-width / 2.0, -half_height),
             (width / 2.0, -half_height),
             (width / 2.0, half_height),
             (-width / 2.0, half_height),
         ]
+        orientation = signed_area(vertices)
+        return {
+            "vertices": vertices,
+            "entities": build_line_entities(vertices, orientation),
+            "orientation": orientation,
+        }
     if mode == "chaos":
-        width, radius = dim
-        return approximate_chaos_vertices(width, radius)
+        return build_trace_boundary(approximate_chaos_shape(dim[0], dim[1]))
     if mode == "polygon":
         if not shape_file:
             raise ValueError("Polygon mode requires a shape file.")
         with open(shape_file, "r") as handle:
             shape = json.load(handle)
-        if isinstance(shape, dict) and "vertices" in shape:
-            return dedupe_vertices(shape["vertices"])
-        if isinstance(shape, dict) and "segments" in shape:
-            return build_trace_vertices(shape)
         if isinstance(shape, list):
-            return dedupe_vertices(shape)
+            vertices = dedupe_vertices(shape)
+            orientation = signed_area(vertices)
+            return {
+                "vertices": vertices,
+                "entities": build_line_entities(vertices, orientation),
+                "orientation": orientation,
+            }
+        if isinstance(shape, dict) and "vertices" in shape:
+            vertices = dedupe_vertices(shape["vertices"])
+            orientation = signed_area(vertices)
+            return {
+                "vertices": vertices,
+                "entities": build_line_entities(vertices, orientation),
+                "orientation": orientation,
+            }
+        if isinstance(shape, dict) and "segments" in shape:
+            return build_trace_boundary(shape)
         raise ValueError("Unsupported shape file structure.")
     raise ValueError("Unsupported mode: {0}".format(mode))
 
 
 class Reverb(object):
-    """Simulate 2D specular reflections inside a closed polygon."""
+    """Simulate 2D specular reflections inside a closed 2D boundary."""
 
     def __init__(self, p0, theta0, dim=None, mode="chaos", shape_file=None):
         self.no = 0
         self.mode = mode
         self.dim = dim
         self.shape_file = shape_file
-        self.vertices = build_vertices(mode, dim=dim, shape_file=shape_file)
+        boundary = build_boundary(mode, dim=dim, shape_file=shape_file)
+        self.vertices = boundary["vertices"]
+        self.entities = boundary["entities"]
+        self.orientation = boundary["orientation"]
         if len(self.vertices) < 3:
             raise ValueError("A chamber requires at least three vertices.")
-
-        self.orientation = signed_area(self.vertices)
-        if abs(self.orientation) < EPSILON:
-            raise ValueError("Polygon area is zero. Check the chamber vertices.")
-
-        self.edges = []
-        for index, start in enumerate(self.vertices):
-            end = self.vertices[(index + 1) % len(self.vertices)]
-            edge = subtract(end, start)
-            normal = (-edge[1], edge[0]) if self.orientation > 0 else (edge[1], -edge[0])
-            self.edges.append(
-                {
-                    "start": start,
-                    "end": end,
-                    "edge": edge,
-                    "normal": normalize(normal),
-                }
-            )
 
         self.p = (float(p0[0]), float(p0[1]))
         if not point_in_polygon(self.p, self.vertices):
@@ -255,32 +372,54 @@ class Reverb(object):
         self.direction = normalize(theta_to_vector(theta0))
         self.theta = vector_to_theta(self.direction)
 
-    def _ray_segment_intersection(self, edge):
-        start = edge["start"]
-        segment = edge["edge"]
-        denominator = cross(self.direction, segment)
+    def _ray_line_intersection(self, entity):
+        denominator = cross(self.direction, entity["edge"])
         if abs(denominator) < EPSILON:
             return None
-
-        offset = subtract(start, self.p)
-        distance = cross(offset, segment) / denominator
+        offset = subtract(entity["start"], self.p)
+        distance = cross(offset, entity["edge"]) / denominator
         portion = cross(offset, self.direction) / denominator
         if distance <= ADVANCE_EPSILON:
             return None
         if portion < -ADVANCE_EPSILON or portion > 1.0 + ADVANCE_EPSILON:
             return None
-
-        hit_point = add(self.p, scale(self.direction, distance))
         return {
             "distance": distance,
-            "point": hit_point,
-            "normal": edge["normal"],
+            "point": add(self.p, scale(self.direction, distance)),
+            "normal": entity["normal"],
         }
+
+    def _ray_arc_intersection(self, entity):
+        offset = subtract(self.p, entity["center"])
+        b = 2.0 * dot(self.direction, offset)
+        c = dot(offset, offset) - entity["radius"] ** 2
+        delta = b * b - 4.0 * c
+        if delta < 0:
+            return None
+        root = math.sqrt(max(delta, 0.0))
+        candidates = [(-b - root) / 2.0, (-b + root) / 2.0]
+        best = None
+        for distance in candidates:
+            if distance <= ADVANCE_EPSILON:
+                continue
+            point = add(self.p, scale(self.direction, distance))
+            angle = math.degrees(math.atan2(point[1] - entity["center"][1], point[0] - entity["center"][0]))
+            if not angle_on_arc(angle, entity["start_angle"], entity["end_angle"]):
+                continue
+            radial = normalize(subtract(point, entity["center"]))
+            normal = scale(radial, -1.0 if entity["ccw"] else 1.0)
+            candidate = {"distance": distance, "point": point, "normal": normal}
+            if best is None or distance < best["distance"]:
+                best = candidate
+        return best
 
     def _next_collision(self):
         collision = None
-        for edge in self.edges:
-            candidate = self._ray_segment_intersection(edge)
+        for entity in self.entities:
+            if entity["type"] == "line":
+                candidate = self._ray_line_intersection(entity)
+            else:
+                candidate = self._ray_arc_intersection(entity)
             if candidate is None:
                 continue
             if collision is None or candidate["distance"] < collision["distance"]:
@@ -294,7 +433,7 @@ class Reverb(object):
         self.p = collision["point"]
         self.direction = reflect(self.direction, collision["normal"])
         self.theta = vector_to_theta(self.direction)
-        self.p = add(self.p, scale(self.direction, ADVANCE_EPSILON))
+        self.p = add(self.p, scale(collision["normal"], ADVANCE_EPSILON))
         return self.p, self.theta
 
     def bounce(self, times, display=True, log=True, filename="outcome"):
@@ -310,9 +449,7 @@ class Reverb(object):
                 if display:
                     self.print_info()
                 if handle is not None:
-                    handle.write(
-                        "{0}\t{1}\t{2}\n".format(self.p[0], self.p[1], self.theta)
-                    )
+                    handle.write("{0}\t{1}\t{2}\n".format(self.p[0], self.p[1], self.theta))
                 self.step()
                 yield self.p, self.theta
                 self.no += 1
